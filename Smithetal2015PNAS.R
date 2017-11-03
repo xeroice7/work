@@ -59,7 +59,7 @@ colnames(expressiondata) <- c("Patient", "Diagnosis", "Gene", "P_D", "Value")
 #### FILTERING DATA WITH OUR CRITERIA OF INTEREST
 expressiondata$Diagnosis <- ordered(expressiondata$Diagnosis, levels = c("BenignLo", "BenignHi", "CancerLo", "CancerHi"))
 expressiondata <- arrange(expressiondata, Diagnosis)
-#stage_diffs <- subset(patientDF, GENE %in% huvfips_overlap) #Subset rows that are matches to those in the targets
+#stage_diffs <- subset(expressiondata, Gene %in% huvfips_overlap) #Subset rows that are matches to those in the targets
 stage_diffs <- subset(expressiondata, Gene %in% totaltestgenes)
 #stage_diffs <- subset(stage_diffs, GENE %in% surface_genes)
 
@@ -67,6 +67,7 @@ stage_diffs <- subset(expressiondata, Gene %in% totaltestgenes)
 
 patient <- dcast(stage_diffs, P_D+Patient+Diagnosis ~ Gene, value.var = "Value") #Make sure there are no duplicate rows
 patient <- arrange(patient, Diagnosis)
+#patient <- filter(patient, ((Diagnosis == 'BenignHi') | (Diagnosis == 'CancerHi')))
 patient <- subset(patient, select = -c(Patient, Diagnosis))
 patient[,1] <- as.character(patient[,1])
 
