@@ -17,18 +17,18 @@ stage_split1 <- function(x, y) {
 # Expression Data
 #####
 #### READ IN PATIENT DATA AND TIDY
-patientdata <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Cervix/cesc/tcga/data_bcr_clinical_data_patient.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE))
+patientdata <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Pancreas/paad/tcga/data_bcr_clinical_data_patient.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE))
 
 colnames(patientdata) <- lapply(patientdata[4,], as.character)
 
 patientdata <- patientdata[-(1:4),]
 
-patientdata <- subset(patientdata, select = c(PATIENT_ID, AJCC_METASTASIS_PATHOLOGIC_PM, AJCC_TUMOR_PATHOLOGIC_PT, GRADE, CLINICAL_STAGE, OS_STATUS)) 
+patientdata <- subset(patientdata, select = c(PATIENT_ID, AJCC_PATHOLOGIC_TUMOR_STAGE, AJCC_METASTASIS_PATHOLOGIC_PM, AJCC_TUMOR_PATHOLOGIC_PT, OS_STATUS)) 
 
-splits <- str_split_fixed(patientdata$CLINICAL_STAGE, " ", 2)
+splits <- str_split_fixed(patientdata$AJCC_PATHOLOGIC_TUMOR_STAGE, " ", 2)
 patientdata <- cbind.data.frame(splits, patientdata)
 names(patientdata)[names(patientdata) == '2'] <- 'Specific_Stages'
-patientdata <- subset(patientdata, select=-c(1, CLINICAL_STAGE))
+patientdata <- subset(patientdata, select=-c(1, AJCC_PATHOLOGIC_TUMOR_STAGE))
 
 splits <- str_split_fixed(patientdata$Specific_Stage, "A|B|C", 2)
 patientdata <- cbind.data.frame(splits, patientdata)
@@ -37,10 +37,8 @@ patientdata <- subset(patientdata, select=-2)
 
 
 #### READ IN CLINICAL DATA AND TIDY
-expressiondata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Cervix/cesc/tcga/data_RNA_Seq_v2_expression_median_edited.csv", sep = ",", stringsAsFactors = FALSE, check.names = FALSE)
-#Got rid of duplicate patients and genes in "edited" copy
-
-expressiondata <- expressiondata[-1,]
+expressiondata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Pancreas/paad/tcga/data_RNA_Seq_v2_expression_median_edited.csv", sep = ",", stringsAsFactors = FALSE, check.names = FALSE)
+#Got rid of 3 duplicate patients and several duplicate genes in "edited" copy
 
 expressiondata[expressiondata == "null"] <- NA
 
@@ -49,13 +47,15 @@ expressiondata <- subset(expressiondata, select = -Entrez_Gene_Id)
 expressiondata <- expressiondata %>% drop_na()
 
 ###### To check to see if there are duplicate patients
-e <- t(expressiondata)
+e <- t(expressiondata) 
 splits <- str_split_fixed(rownames(e), "-", 4)
 e <- cbind.data.frame(splits, e)
 e <- e %>% 
   unite(ID, '1', '2', '3', sep = "-", remove = TRUE)
 any(duplicated(e$ID))
 which(duplicated(e$ID))
+any(duplicated(expressiondata$Hugo_Symbol))
+which(duplicated(expressiondata$Hugo_Symbol))
 #########
 
 expressionDF <- melt(expressiondata, id.vars = "Hugo_Symbol")
@@ -106,11 +106,15 @@ totaltestgenes <- c(c_testgenes, c_gene)
 totaltestgenes <- unique(totaltestgenes)
 totaltestgenes <- as.factor(totaltestgenes)
 
+#Combination of Jun's list (29 genes) and my unique list (34 genes) - total of 50 genes
+ipsgene <- c(c_gene, mcf7ips_overlap)
+ipsgene <- unique(ipsgene)
+
 #### FILTERING DATA WITH OUR CRITERIA OF INTEREST
-grades <- factor(c("G1", "G2", "G3", "G4"))
-grades <- ordered(grades, levels = c("G1", "G2", "G3", "G4"))
-spec.stages <- factor(c("I", "IA", "IA1", "IA2", "IB", "IB1", "IB2", "II", "IIA", "IIA1", "IIA2", "IIB", "III", "IIIA", "IIIB", "IVA", "IVB"))
-spec.stages <- ordered(spec.stages, levels = c("I", "IA", "IA1", "IA2", "IB", "IB1", "IB2", "II", "IIA", "IIA1", "IIA2", "IIB", "III", "IIIA", "IIIB", "IVA", "IVB"))
+grades <- factor(c("T1", "T2", "T3", "T4"))
+grades <- ordered(grades, levels = c("T1", "T2", "T3", "T4"))
+spec.stages <- factor(c("I", "IA", "IB", "II", "IIA", "IIB", "III", "IV"))
+spec.stages <- ordered(spec.stages, levels = c("I", "IA", "IB", "II", "IIA", "IIB", "III", "IV"))
 gen.stages <- factor(c("I", "II", "III", "IV"))
 gen.stages <- ordered(gen.stages, levels = c("I", "II", "III", "IV"))
 status <- factor(c("LIVING", "DECEASED"))
@@ -122,19 +126,20 @@ meta <- ordered(meta, levels = c("M0", "M1"))
 stage_diffs <- patientDF
 stage_diffs <- subset(stage_diffs, GENE %in% huvfips_overlap)
 #stage_diffs <- subset(stage_diffs, OS_STATUS %in% status)
-#stage_diffs <- subset(stage_diffs, GRADE %in% grades)
+#stage_diffs <- subset(stage_diffs, AJCC_TUMOR_PATHOLOGIC_PT %in% grades)
 #stage_diffs <- subset(stage_diffs, General_Stages %in% gen.stages)
 #stage_diffs <- subset(stage_diffs, Specific_Stages %in% spec.stages)
 #stage_diffs <- subset(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM %in% meta)
-#stage_diffs <- filter(stage_diffs, GRADE == "G3")
-stage_diffs <- filter(stage_diffs, General_Stages == "I")
-#stage_diffs <- filter(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM == "M1")
+#stage_diffs <- filter(stage_diffs, ((Tumor == "T3") | (Tumor == "T2")))
+#stage_diffs <- filter(stage_diffs, General_Stages == "I")
+#stage_diffs <- filter(stage_diffs, AJCC_TUMOR_PATHOLOGIC_PT == "T3")
+stage_diffs <- filter(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM == "M1")
 
-patient <- dcast(stage_diffs, PATIENT_ID+General_Stages+Specific_Stages+GRADE+AJCC_METASTASIS_PATHOLOGIC_PM+OS_STATUS ~ GENE, value.var = "EXPRESSION_LEVEL")
+patient <- dcast(stage_diffs, PATIENT_ID+General_Stages+Specific_Stages+AJCC_TUMOR_PATHOLOGIC_PT+AJCC_METASTASIS_PATHOLOGIC_PM+OS_STATUS ~ GENE, value.var = "EXPRESSION_LEVEL")
 #if there is an error, there are duplicate genes in the array - check this with which(duplicated(expressiondata$Hugo_Symbol)) and change the names with X"-1"
-extras <- cbind.data.frame(patient$PATIENT_ID, patient$Specific_Stages, patient$GRADE, patient$AJCC_METASTASIS_PATHOLOGIC_PM, patient$General_Stages, patient$OS_STATUS)
+extras <- cbind.data.frame(patient$PATIENT_ID, patient$Specific_Stages, patient$AJCC_METASTASIS_PATHOLOGIC_PM, patient$AJCC_TUMOR_PATHOLOGIC_PT, patient$General_Stages, patient$OS_STATUS)
 
-colnames(extras) <- c("PATIENT_ID", "Specific_Stages", "Grade", "Metastasis", "General_Stages", "OS_STATUS")
+colnames(extras) <- c("PATIENT_ID", "Specific_Stages", "Metastasis", "Grade", "General_Stages", "OS_STATUS")
 
 splits <- str_split_fixed(patient$PATIENT_ID, pattern = "-", "3")
 
@@ -144,10 +149,10 @@ patient <- subset(patient, select = -c(`1`, `2`, PATIENT_ID)) # Getting rid of S
 
 names(patient)[names(patient) == '3'] <- 'ID'
 
-patient <- arrange(patient, General_Stages, Specific_Stages, GRADE, OS_STATUS)
+patient <- arrange(patient, General_Stages, Specific_Stages, AJCC_TUMOR_PATHOLOGIC_PT, AJCC_METASTASIS_PATHOLOGIC_PM, OS_STATUS)
 
 patient <- patient %>% 
-  unite(PATIENT_ID, ID, General_Stages, Specific_Stages, GRADE, AJCC_METASTASIS_PATHOLOGIC_PM, sep = "_", remove = TRUE)
+  unite(PATIENT_ID, ID, General_Stages, Specific_Stages, AJCC_TUMOR_PATHOLOGIC_PT, AJCC_METASTASIS_PATHOLOGIC_PM, sep = "_", remove = TRUE)
 
 patient <- subset(patient, select = -OS_STATUS)
 
@@ -158,6 +163,8 @@ patient[,2:ncol(patient)] <- sapply(patient[,2:ncol(patient)],as.numeric)
 sapply(patient, class)  #to check classes
 
 patient <- patient %>% remove_rownames %>% column_to_rownames(var="PATIENT_ID") # Making the patient IDs the rownames, not the first column
+
+#patient <- patient[, sample(ncol(patient), 5000)] # Randomly sample n number of genes for analysis
 
 redblackgreen <- colorRampPalette(c("green", "black", "red"))(n = 100)  # Making a color palette for the heatmap 
 
@@ -172,25 +179,21 @@ grade3 <- test1
 #t <- 1-cor(t(test1))
 x <- cor(t(test1))
 y <- cor(t(grade1), t(grade3))
-#heatmap(test1, Colv=NA, col=greenred(10),scale="none")
-#cor(t(test1))
 hc <- hclust(as.dist(1-cor(t(test1))))
 plot(hc)
-heatmap(test1, Rowv=as.dendrogram(hc), Colv=NA, col=greenred(10), cexRow = 0.2, scale = "column")
+heatmap(x, Rowv=as.dendrogram(hc), Colv=NA, col=greenred(10), cexRow = 0.2, scale = "column")
 heatmap.2(y, 
           Rowv=NA, 
           Colv=NA, 
           col=bluered(256), 
           #breaks = breaks,
-          cexRow = 0.75, #0.2
+          cexRow = 0.75, 
           cexCol = 0.75, 
           scale = "none", 
-          trace = "none" 
+          trace = "none"#, 
           #ColSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black"),
           #RowSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black")
 )
-
-#breaks = c(0,1,2,3,4,5,10,15,20,25,30,40,50,60,70,80,90,100,150,200,250,500,750,1000,1500,2000,2500,5000,7500,10000,50000,100000,250000,500000,1000000)
 
 # PVClust analysis using bootstrapping analysis:
 result3 <- pvclust(test, nboot = 1000)

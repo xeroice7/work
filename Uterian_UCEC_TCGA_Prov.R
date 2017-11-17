@@ -106,13 +106,15 @@ status <- factor(c("LIVING", "DECEASED"))
 status <- ordered(status, levels = c("LIVING", "DECEASED"))
 
 #Subset rows that are matches to those in the targets
-stage_diffs <- subset(patientDF, GENE %in% totaltestgenes)
-stage_diffs <- subset(stage_diffs, OS_STATUS %in% status)
-stage_diffs <- subset(stage_diffs, GRADE %in% grades)
-stage_diffs <- subset(stage_diffs, General_Stages %in% gen.stages)
-stage_diffs <- subset(stage_diffs, Specific_Stages %in% spec.stages)
+stage_diffs <- patientDF
+stage_diffs <- subset(stage_diffs, GENE %in% huvfips_overlap)
+#stage_diffs <- subset(stage_diffs, OS_STATUS %in% status)
+#stage_diffs <- subset(stage_diffs, GRADE %in% grades)
+#stage_diffs <- subset(stage_diffs, General_Stages %in% gen.stages)
+#stage_diffs <- subset(stage_diffs, Specific_Stages %in% spec.stages)
 #stage_diffs <- filter(stage_diffs, ((Tumor == "T3") | (Tumor == "T2")))
-#stage_diffs <- filter(stage_diffs, Stages == "IV")
+stage_diffs <- filter(stage_diffs, General_Stages == "I")
+#stage_diffs <- filter(stage_diffs, GRADE == "G3")
 
 patient <- dcast(stage_diffs, PATIENT_ID+General_Stages+Specific_Stages+GRADE+OS_STATUS ~ GENE, value.var = "EXPRESSION_LEVEL")
 
@@ -149,6 +151,78 @@ redblackgreen <- colorRampPalette(c("green", "black", "red"))(n = 100)  # Making
 patient <- patient[, apply(patient, 2, sum)!=0] ### Required to remove all the columns with 0 in them to get a distance matrix
 test <- as.matrix(patient)
 test1 <- t(test)
+grade1 <- test1
+grade3 <- test1
+#heatmap(test1, Colv=NA, col=greenred(10),scale="none")
+#cor(t(test1))
+#t <- 1-cor(t(test1))
+x <- cor(t(test1))
+y <- cor(t(grade1), t(grade3))
+#heatmap(test1, Colv=NA, col=greenred(10),scale="none")
+#cor(t(test1))
+t <- 1-cor(t(test1))
+hc <- hclust(as.dist(1-cor(t(test1))))
+plot(hc)
+heatmap(test1, Rowv=as.dendrogram(hc) , Colv=NA, col=greenred(10), cexRow = 0.2)
+heatmap(test1, Rowv=as.dendrogram(hc) , Colv=NA, col=redblackgreen, cexRow = 0.2)
+heatmap.2(y, 
+          Rowv=NA, 
+          Colv=NA, 
+          col=bluered(256), 
+          #breaks = breaks,
+          cexRow = 0.75, 
+          cexCol = 0.75, 
+          scale = "none", 
+          trace = "none"#, 
+          #ColSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black"),
+          #RowSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black")
+)
+#######
+t_patient <- t(patient)
+mean <- rowMeans(t_patient, na.rm = FALSE)
+t_patient <- cbind.data.frame(t_patient, mean)
+
+t_patient_lo <- t_patient #For Low
+
+t_patient_hi <- t_patient #For Hi 
+
+t_patient <- merge(t_patient_lo, t_patient_hi, by = "row.names")
+mean_diff <- t_patient$mean.y-t_patient$mean.x
+t_patient <- cbind.data.frame(t_patient, mean_diff)
+
+plot_patient <- cbind.data.frame(t_patient$Row.names, t_patient$mean_diff)
+
+ggplot(t_patient) + 
+  geom_tile(aes(x=rownames(t_patient), y=rownames(t_patient), fill = mean_diff)) + 
+  scale_fill_gradient(redblackgreen)
+
+plot_patient <- plot_patient %>% remove_rownames %>% column_to_rownames(var="t_patient$Row.names")
+plot_patient <- as.matrix(plot_patient)
+plot_patient <- cbind(plot_patient, plot_patient)
+
+ggplot(plotcscDF) + 
+  geom_tile(aes(x = Population, y = Target, fill = meannormalized)) +  
+  scale_fill_gradient(low = "white", high = "royalblue", name = "") + 
+  xlab("") + 
+  ylab("") + 
+  theme(axis.text.x = element_text(size = 8), 
+        axis.text.y = element_text(size = 10),
+        legend.text = element_text(size = 8)) 
+
+
+heatmap.2(plot_patient, 
+          Rowv=NA, 
+          Colv=NA, 
+          col=bluered(256), 
+          #breaks = breaks,
+          cexRow = 0.7, 
+          cexCol = 0.7, 
+          scale = "none", 
+          trace = "none")
+
+
+
+
 
 #heatmap(test1, Colv=NA, col=greenred(10),scale="none")
 #cor(t(test1))
