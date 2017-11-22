@@ -100,8 +100,8 @@ stage_diffs <- subset(stage_diffs, GENE %in% huvfips_overlap) #Subset rows that 
 #stage_diffs <- subset(stage_diffs, Specific_Stages %in% stages)
 stage_diffs <- subset(stage_diffs, General_Stages %in% stage)
 #stage_diffs <- filter(stage_diffs, ((Tumor == "T3") | (Tumor == "T2")))
-#stage_diffs <- filter(stage_diffs, Tumor == "T3")
-stage_diffs <- filter(stage_diffs, General_Stages == "I")
+stage_diffs <- filter(stage_diffs, Tumor == "T1")
+#stage_diffs <- filter(stage_diffs, General_Stages == "IV")
 #stage_diffs <- filter(stage_diffs, Metastasis == "M1")
 
 patient <- dcast(stage_diffs, PATIENT_ID+Tumor+General_Stages+Specific_Stages+Metastasis ~ GENE, value.var = "EXPRESSION_LEVEL")
@@ -152,8 +152,8 @@ hc <- hclust(as.dist(1-cor(t(test1))))
 #heatmap(test1, Rowv=as.dendrogram(hc) , Colv=NA, col=greenred(10), cexRow = 0.2)
 #heatmap(test1, Rowv=as.dendrogram(hc) , Colv=NA, col=redblackgreen, cexRow = 0.2)
 heatmap.2(y, 
-          Rowv=NA, 
-          Colv=NA, 
+          Rowv=T, 
+          Colv=T, 
           col=bluered(256), 
           #breaks = breaks,
           cexRow = 0.75, #0.2
@@ -163,13 +163,58 @@ heatmap.2(y,
           #ColSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black"),
           #RowSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black")
 )
+genecor <- y
+output <- vector("double", ncol(genecor))
+for (i in 1:ncol(genecor)){
+  output[i] <- genecor[i,i]
+}
+extracted <- cbind.data.frame(rownames(y), output)
+colnames(extracted) <- c("Gene", "Correlation")
+
+#####To use heatmap.2 function:
+extracted <- extracted %>% remove_rownames %>% column_to_rownames(var="Gene")
+extracted <- cbind(extracted, extracted)
+extracted <- as.matrix(extracted)
+ext_clust <- hclust(dist(1-extracted))
+heatmap.2(extracted,
+          Rowv=as.dendrogram(ext_clust), 
+          Colv=NA, 
+          col=bluered(256), 
+          #breaks = breaks,
+          cexRow = 0.7, 
+          cexCol = 0.7, 
+          scale = "none", 
+          trace = "none")
+
+######To use geom_tile function:
+extracted <- melt(extracted)
+ggplot(extracted) +
+  geom_tile(aes(x=variable, y=rev(levels(Gene)), fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") + 
+  scale_y_discrete(name="", limits = rev(levels(extracted$Gene))) + 
+  geom_text(aes(x=variable, y=rev(levels(Gene)), label = round(value, digits = 2)), size=2) + 
+  xlab("Correlation between Grade 1 vs 3") + 
+  theme(axis.text.x = element_blank(), 
+        axis.text.y = element_text(size=6),
+        legend.text = element_text(size=8), 
+        axis.title.x = element_text(size=8)) 
+
+## For plot to sort numerically
+extracted <- arrange(extracted, desc(value))
+ggplot(extracted) +
+  geom_tile(aes(x=variable, y=Gene, fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") + 
+  scale_y_discrete(name="", limits = extracted$Gene) + 
+  geom_text(aes(x=variable, y=Gene, label = round(value, digits = 2)), size=2) + 
+  xlab("Correlation between Grade 1 vs 3") + 
+  theme(axis.text.x = element_blank(), 
+        axis.text.y = element_text(size=6),
+        legend.text = element_text(size=8), 
+        axis.title.x = element_text(size=8)) 
 
 
 
-
-
-
-
+##############
 heatmap.2(test, 
           #distfun = dist_cor, hclustfun = clus_wd2, 
           # clustering
@@ -335,8 +380,8 @@ ggplot(pc_dat,aes(x=PC1, y=PC2, col=type)) + geom_point() + geom_text(aes(label 
 # cBio - Metabric 
 #####
 #### READ IN PATIENT DATA AND TIDY
-tumordata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/brca_metabric/data_clinical_supp_sample.csv", sep = ",", stringsAsFactors = FALSE)
-patientdata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/brca_metabric/data_clinical_supp_patient.csv", sep = ",", stringsAsFactors = FALSE)
+tumordata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Breast/brca_metabric/data_clinical_supp_sample.csv", sep = ",", stringsAsFactors = FALSE)
+patientdata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Breast/brca_metabric/data_clinical_supp_patient.csv", sep = ",", stringsAsFactors = FALSE)
 
 patientDF <- merge(x = tumordata, y = patientdata, by = "PATIENT_ID", all = TRUE)
 

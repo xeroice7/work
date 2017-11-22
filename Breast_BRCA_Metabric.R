@@ -98,10 +98,10 @@ stage_diffs <- subset(stage_diffs, GENE %in% huvfips_overlap) #Subset rows that 
 #stage_diffs <- subset(stage_diffs, Metastasis %in% meta)
 #stage_diffs <- subset(stage_diffs, Tumor %in% grades)
 #stage_diffs <- subset(stage_diffs, Specific_Stages %in% stages)
-stage_diffs <- subset(stage_diffs, General_Stages %in% stage)
+#stage_diffs <- subset(stage_diffs, General_Stages %in% stage)
 #stage_diffs <- filter(stage_diffs, ((Tumor == "T3") | (Tumor == "T2")))
-#stage_diffs <- filter(stage_diffs, Tumor == "T1")
-stage_diffs <- filter(stage_diffs, General_Stages == "I")
+stage_diffs <- filter(stage_diffs, Tumor == "T1")
+#stage_diffs <- filter(stage_diffs, General_Stages == "I")
 #stage_diffs <- filter(stage_diffs, Metastasis == "M1")
 
 patient <- dcast(stage_diffs, PATIENT_ID+Tumor+General_Stages+Specific_Stages+Metastasis ~ GENE, value.var = "EXPRESSION_LEVEL")
@@ -146,6 +146,8 @@ test1 <- t(test)
 t <- 1-cor(t(test1))
 x <- cor(t(test1))
 hc <- hclust(as.dist(1-cor(t(test1))))
+grade1 <- test1
+grade3 <- test1
 #plot(hc)
 #heatmap(test1, Rowv=as.dendrogram(hc) , Colv=NA, col=greenred(10), cexRow = 0.2)
 #heatmap(test1, Rowv=as.dendrogram(hc) , Colv=NA, col=redblackgreen, cexRow = 0.2)
@@ -172,7 +174,32 @@ patientdata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Breast/brca_me
 
 patientDF <- merge(x = tumordata, y = patientdata, by = "PATIENT_ID", all = TRUE)
 
-patientDF <- subset(patientDF, select = c(PATIENT_ID, GRADE, TUMOR_STAGE)) 
+patientDF <- subset(patientDF, select = c(PATIENT_ID, GRADE, TUMOR_STAGE, THREEGENE)) 
+
+splits <- str_split_fixed(patientDF$THREEGENE, " ", 2)
+patientDF <- cbind.data.frame(splits, patientDF)
+names(patientDF)[names(patientDF) == '2'] <- 'Proliferation'
+names(patientDF)[names(patientDF) == '1'] <- 'Markers'
+
+splits <- str_split_fixed(patientDF$Proliferation, " ", 2)
+patientDF <- cbind.data.frame(splits, patientDF)
+names(patientDF)[names(patientDF) == '1'] <- 'RATE_OF_PROLIF'
+patientDF <- subset(patientDF, select= -c(2, Proliferation))
+
+splits <- str_split_fixed(patientDF$Markers, "/", 2)
+patientDF <- cbind.data.frame(splits, patientDF)
+names(patientDF)[names(patientDF) == '1'] <- 'ER_STATUS'
+names(patientDF)[names(patientDF) == '2'] <- 'HER_STATUS'
+patientDF <- subset(patientDF, select= -c(Markers, THREEGENE))
+
+patientDF$new <- as.character(patientDF$ER_STATUS)
+patientDF$new[patientDF$new == "null"] <- NA
+patientDF$new[patientDF$new == "ER-"] <- "HER2-"
+patientDF$new[patientDF$new == "ER+"] <- "HER2-"
+patientDF$HER_STATUS <- as.factor(patientDF$new)
+patientDF <- subset(patientDF, select= -new)
+patientDF$ER_STATUS[patientDF$ER_STATUS == "null"] <- NA
+patientDF$ER_STATUS[patientDF$ER_STATUS == "HER2+"] <- NA
 
 #### READ IN CLINICAL DATA AND TIDY
 expressiondata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Breast/brca_metabric/data_expression.csv", sep = ",", stringsAsFactors = FALSE, check.names = FALSE)
@@ -237,20 +264,23 @@ stages <- ordered(stages, levels = c("1", "2", "3", "4"))
 
 stage_diffs <- patientDF
 #stage_diffs <- subset(patientDF, GENE %in% totaltestgenes)
-stage_diffs <- subset(stage_diffs, GENE %in% mcf7ips_overlap) #Subset rows that are matches to those in the targets
+stage_diffs <- subset(stage_diffs, GENE %in% huvfips_overlap) #Subset rows that are matches to those in the targets
 #stage_diffs <- subset(stage_diffs, GENE %in% gene)
 #stage_diffs <- subset(stage_diffs, GRADE %in% grades)
-stage_diffs <- subset(stage_diffs, TUMOR_STAGE %in% stages)
+#stage_diffs <- subset(stage_diffs, TUMOR_STAGE %in% stages)
 
-stage_diffs <- filter(stage_diffs, TUMOR_STAGE == 4)
+#stage_diffs <- filter(stage_diffs, TUMOR_STAGE == 1)
 #stage_diffs <- filter(stage_diffs, ((GRADE == 1) | (GRADE == 2)))
 #stage_diffs <- filter(stage_diffs, TUMOR_STAGE == 2)
 #stage_diffs <- filter(stage_diffs, TUMOR_STAGE == 3)
 #stage_diffs <- filter(stage_diffs, TUMOR_STAGE == 4)
-#stage_diffs <- filter(stage_diffs, GRADE == 1)
+#stage_diffs <- filter(stage_diffs, GRADE == 2)
+stage_diffs <- filter(stage_diffs, ((ER_STATUS == "ER+") | (HER_STATUS == "HER2+")))
+#stage_diffs <- filter(stage_diffs, RATE_OF_PROLIF == "High")
 
-patient <- dcast(stage_diffs, PATIENT_ID+GRADE+TUMOR_STAGE ~ GENE, value.var = "EXPRESSION_LEVEL")
+patient <- dcast(stage_diffs, PATIENT_ID+GRADE+TUMOR_STAGE+ER_STATUS+HER_STATUS+RATE_OF_PROLIF ~ GENE, value.var = "EXPRESSION_LEVEL")
 
+#
 extras <- cbind.data.frame(patient$PATIENT_ID, patient$GRADE, patient$TUMOR_STAGE)
 colnames(extras) <- c("PATIENT_ID", "TUMOR", "STAGES")
 #
@@ -268,7 +298,7 @@ patient <- patient %>%
   unite(PATIENT_ID, ID, TUMOR_STAGE, GRADE, sep = "_", remove = TRUE)
 
 #
-patient <- subset(patient, select = -c(GRADE, TUMOR_STAGE))
+patient <- subset(patient, select = -c(GRADE, TUMOR_STAGE, RATE_OF_PROLIF, ER_STATUS, HER_STATUS))
 patient[,1] <- as.character(patient[,1])
 
 patient[,2:ncol(patient)] <- sapply(patient[,2:ncol(patient)],as.numeric)
@@ -308,3 +338,150 @@ heatmap.2(y,
           ColSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black"),
           RowSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black")
 )
+
+genecor <- y
+output <- vector("double", ncol(genecor))
+for (i in 1:ncol(genecor)){
+  output[i] <- genecor[i,i]
+}
+extracted <- cbind.data.frame(rownames(y), output)
+colnames(extracted) <- c("Gene", "Correlation")
+
+#####To use heatmap.2 function:
+extracted <- extracted %>% remove_rownames %>% column_to_rownames(var="Gene")
+extracted <- cbind(extracted, extracted)
+extracted <- as.matrix(extracted)
+ext_clust <- hclust(dist(1-extracted))
+heatmap.2(extracted,
+          Rowv=as.dendrogram(ext_clust), 
+          Colv=NA, 
+          col=bluered(256), 
+          #breaks = breaks,
+          cexRow = 0.7, 
+          cexCol = 0.7, 
+          scale = "none", 
+          trace = "none")
+
+######To use geom_tile function:
+extracted <- melt(extracted)
+ggplot(extracted) +
+  geom_tile(aes(x=variable, y=rev(levels(Gene)), fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") + 
+  scale_y_discrete(name="", limits = rev(levels(extracted$Gene))) + 
+  geom_text(aes(x=variable, y=rev(levels(Gene)), label = round(value, digits = 2)), size=2) + 
+  xlab("Correlation between ER-/Her2- vs ER+|Her2+") + 
+  theme(axis.text.x = element_blank(), 
+        axis.text.y = element_text(size=6),
+        legend.text = element_text(size=8), 
+        axis.title.x = element_text(size=8)) 
+
+## For plot to sort numerically
+extracted <- arrange(extracted, desc(value))
+ggplot(extracted) +
+  geom_tile(aes(x=variable, y=Gene, fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") + 
+  scale_y_discrete(name="", limits = extracted$Gene) + 
+  geom_text(aes(x=variable, y=Gene, label = round(value, digits = 2)), size=2) + 
+  xlab("Correlation between ER-/Her2- vs ER+orHer2+") + 
+  theme(axis.text.x = element_blank(), 
+        axis.text.y = element_text(size=6),
+        legend.text = element_text(size=8), 
+        axis.title.x = element_text(size=8)) 
+
+############
+#To look at stage differences
+############
+t_patient <- t(patient)
+mean <- rowMeans(t_patient, na.rm = FALSE)
+t_patient <- cbind.data.frame(t_patient, mean)
+
+t_patient_lo <- t_patient #For Low
+t_patient_2 <- t_patient
+t_patient_3 <- t_patient
+t_patient_hi <- t_patient #For Hi 
+
+colnames(t_patient_lo)[colnames(t_patient_lo) == 'mean'] <- 'mean_1'
+colnames(t_patient_2)[colnames(t_patient_2) == 'mean'] <- 'mean_2'
+colnames(t_patient_3)[colnames(t_patient_3) == 'mean'] <- 'mean_3'
+colnames(t_patient_hi)[colnames(t_patient_hi) == 'mean'] <- 'mean_4'
+
+t_patient_m1 <- merge(t_patient_lo, t_patient_2, by = "row.names")
+t_patient_m2 <- merge(t_patient_3, t_patient_hi, by = "row.names")
+t_patient_means <- merge(t_patient_m1, t_patient_m2, by = "Row.names")
+
+t_patient_means$mean_diff_1 <- t_patient_means$mean_1-t_patient_means$mean_1
+t_patient_means$mean_diff_2 <- t_patient_means$mean_2-t_patient_means$mean_1
+t_patient_means$mean_diff_3 <- t_patient_means$mean_3-t_patient_means$mean_1
+t_patient_means$mean_diff_4 <- t_patient_means$mean_4-t_patient_means$mean_1
+
+cast_patient <- cbind.data.frame(t_patient_means$Row.names, t_patient_means$mean_diff_1, t_patient_means$mean_diff_4)
+#colnames(cast_patient) <- c("Genes", "Stage1", "Stage2", "Stage3", "Stage4")
+colnames(cast_patient) <- c("Genes", "ER+|HER2+", "ER-/HER2-")
+melt_patient <- melt(cast_patient)
+colnames(melt_patient) <- c("Genes", "Stages", "Difference")
+melt_patient$Genes <- as.factor(melt_patient$Genes)
+#plot_patient <- cbind.data.frame(t_patient$Row.names, t_patient$mean_diff)
+
+ggplot(melt_patient) + 
+  geom_tile(aes(x=Stages, y=rev(Genes), fill = Difference)) + 
+  #scale_fill_gradient(low = "white", high = "firebrick", name = "") + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(name="", limits = rev(levels(melt_patient$Genes))) + 
+  geom_text(aes(x=Stages, y=rev(Genes), label = round(Difference, digits = 1)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8))
+
+# To see descending values
+melt_patient <- filter(melt_patient, Stages == "ER-/HER2-")
+melt_patient <- arrange(melt_patient, desc(Difference))
+ggplot(melt_patient) + 
+  geom_tile(aes(x=Stages, y=Genes, fill = Difference)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(name="", limits = melt_patient$Genes) + 
+  geom_text(aes(x=Stages, y=Genes, label = round(Difference, digits = 1)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8)) 
+
+#To cluster similar trends:
+cast_patient <- cast_patient %>% remove_rownames %>% column_to_rownames(var="Genes")
+cast_patient <- as.matrix(cast_patient)
+
+heatmap.2(cast_patient, 
+          Rowv=T, 
+          Colv=NA, 
+          col=bluered(256), 
+          #breaks = breaks,
+          cexRow = 0.5, 
+          cexCol = 0.7, 
+          scale = "none", 
+          trace = "none")
+
+
+plot_patient <- plot_patient %>% remove_rownames %>% column_to_rownames(var="t_patient$Row.names")
+plot_patient <- as.matrix(plot_patient)
+plot_patient <- cbind(plot_patient, plot_patient )
+
+ggplot(plotcscDF) + 
+  geom_tile(aes(x = Population, y = Target, fill = meannormalized)) +  
+  scale_fill_gradient(low = "white", high = "royalblue", name = "") + 
+  xlab("") + 
+  ylab("") + 
+  theme(axis.text.x = element_text(size = 8), 
+        axis.text.y = element_text(size = 10),
+        legend.text = element_text(size = 8)) 
+
+
+heatmap.2(plot_patient, 
+          Rowv=NA, 
+          Colv=NA, 
+          col=bluered(256), 
+          #breaks = breaks,
+          cexRow = 0.7, 
+          cexCol = 0.7, 
+          scale = "none", 
+          trace = "none")
+
+
+

@@ -113,7 +113,7 @@ stage_diffs <- subset(stage_diffs, GENE %in% huvfips_overlap)
 #stage_diffs <- subset(stage_diffs, General_Stages %in% gen.stages)
 #stage_diffs <- subset(stage_diffs, Specific_Stages %in% spec.stages)
 #stage_diffs <- filter(stage_diffs, ((Tumor == "T3") | (Tumor == "T2")))
-stage_diffs <- filter(stage_diffs, General_Stages == "I")
+stage_diffs <- filter(stage_diffs, General_Stages == "III")
 #stage_diffs <- filter(stage_diffs, GRADE == "G3")
 
 patient <- dcast(stage_diffs, PATIENT_ID+General_Stages+Specific_Stages+GRADE+OS_STATUS ~ GENE, value.var = "EXPRESSION_LEVEL")
@@ -183,22 +183,59 @@ mean <- rowMeans(t_patient, na.rm = FALSE)
 t_patient <- cbind.data.frame(t_patient, mean)
 
 t_patient_lo <- t_patient #For Low
-
+t_patient_2 <- t_patient
+t_patient_3 <- t_patient
 t_patient_hi <- t_patient #For Hi 
 
-t_patient <- merge(t_patient_lo, t_patient_hi, by = "row.names")
-mean_diff <- t_patient$mean.y-t_patient$mean.x
-t_patient <- cbind.data.frame(t_patient, mean_diff)
+colnames(t_patient_1)[colnames(t_patient_1) == 'mean'] <- 'mean_1'
+colnames(t_patient_2)[colnames(t_patient_2) == 'mean'] <- 'mean_2'
+colnames(t_patient_3)[colnames(t_patient_3) == 'mean'] <- 'mean_3'
+colnames(t_patient_4)[colnames(t_patient_4) == 'mean'] <- 'mean_4'
 
-plot_patient <- cbind.data.frame(t_patient$Row.names, t_patient$mean_diff)
+t_patient_m1 <- merge(t_patient_1, t_patient_2, by = "row.names")
+t_patient_m2 <- merge(t_patient_3, t_patient_4, by = "row.names")
+t_patient_means <- merge(t_patient_m1, t_patient_m2, by = "Row.names")
 
-ggplot(t_patient) + 
-  geom_tile(aes(x=rownames(t_patient), y=rownames(t_patient), fill = mean_diff)) + 
-  scale_fill_gradient(redblackgreen)
+t_patient_means$mean_diff_1 <- t_patient_means$mean_1-t_patient_means$mean_1
+t_patient_means$mean_diff_2 <- t_patient_means$mean_2-t_patient_means$mean_1
+t_patient_means$mean_diff_3 <- t_patient_means$mean_3-t_patient_means$mean_1
+t_patient_means$mean_diff_4 <- t_patient_means$mean_4-t_patient_means$mean_1
+
+cast_patient <- cbind.data.frame(t_patient_means$Row.names, t_patient_means$mean_diff_1, t_patient_means$mean_diff_2, t_patient_means$mean_diff_3, t_patient_means$mean_diff_4)
+colnames(cast_patient) <- c("Genes", "Stage1", "Stage2", "Stage3", "Stage4")
+melt_patient <- melt(cast_patient)
+colnames(melt_patient) <- c("Genes", "Stages", "Difference")
+melt_patient$Genes <- as.factor(melt_patient$Genes)
+#plot_patient <- cbind.data.frame(t_patient$Row.names, t_patient$mean_diff)
+
+ggplot(melt_patient) + 
+  geom_tile(aes(x=Stages, y=rev(Genes), fill = Difference)) + 
+  #scale_fill_gradient(low = "white", high = "firebrick", name = "") + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(name="", limits = rev(levels(melt_patient$Genes))) + 
+  geom_text(aes(x=Stages, y=rev(Genes), label = round(Difference, digits = 1)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8)) 
+
+#To cluster similar trends:
+cast_patient <- cast_patient %>% remove_rownames %>% column_to_rownames(var="Genes")
+cast_patient <- as.matrix(cast_patient)
+
+heatmap.2(cast_patient, 
+          Rowv=T, 
+          Colv=NA, 
+          col=bluered(256), 
+          #breaks = breaks,
+          cexRow = 0.5, 
+          cexCol = 0.7, 
+          scale = "none", 
+          trace = "none")
+
 
 plot_patient <- plot_patient %>% remove_rownames %>% column_to_rownames(var="t_patient$Row.names")
 plot_patient <- as.matrix(plot_patient)
-plot_patient <- cbind(plot_patient, plot_patient)
+plot_patient <- cbind(plot_patient, plot_patient )
 
 ggplot(plotcscDF) + 
   geom_tile(aes(x = Population, y = Target, fill = meannormalized)) +  
