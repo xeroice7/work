@@ -132,14 +132,14 @@ stages <- factor(c("I", "IA", "IB", "II", "IIA", "IIB", "IIIA", "IIIB", "IV"))
 stages <- ordered(stages, levels = c("I", "IA", "IB", "II", "IIA", "IIB", "IIIA", "IIIB", "IV"))
 
 stage_diffs <- patientDF
-stage_diffs <- subset(stage_diffs, GENE %in% a549ips_overlap) #Subset rows that are matches to those in the targets
+stage_diffs <- subset(stage_diffs, GENE %in% mcf7ips_overlap) #Subset rows that are matches to those in the targets
 #stage_diffs <- subset(stage_diffs, GENE %in% surface_genes)
 #stage_diffs <- subset(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM %in% meta)
 #stage_diffs <- subset(stage_diffs, AJCC_TUMOR_PATHOLOGIC_PT %in% grades)
 #stage_diffs <- subset(stage_diffs, Specific_Stage %in% stages)
 #stage_diffs <- filter(stage_diffs, ((Tumor == "T3") | (Tumor == "T2")))
-stage_diffs <- filter(stage_diffs, General_Grade == "T4")
-#stage_diffs <- filter(stage_diffs, General_Stages == "I")
+#stage_diffs <- filter(stage_diffs, General_Grade == "T1")
+stage_diffs <- filter(stage_diffs, General_Stages == "I")
 #stage_diffs <- filter(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM == "M1")
 
 patient <- dcast(stage_diffs, PATIENT_ID+General_Grade+Specific_Grade+General_Stages+Specific_Stage+AJCC_METASTASIS_PATHOLOGIC_PM ~ GENE, value.var = "EXPRESSION_LEVEL")
@@ -283,8 +283,8 @@ t_patient_means$mean_diff_3 <- t_patient_means$mean_3-t_patient_means$mean_1
 t_patient_means$mean_diff_4 <- t_patient_means$mean_4-t_patient_means$mean_1
 
 cast_patient <- cbind.data.frame(t_patient_means$Row.names, t_patient_means$mean_diff_1, t_patient_means$mean_diff_2, t_patient_means$mean_diff_3, t_patient_means$mean_diff_4)
-#colnames(cast_patient) <- c("Genes", "Stage1", "Stage2", "Stage3", "Stage4")
-colnames(cast_patient) <- c("Genes", "Grade1", "Grade2", "Grade3", "Grade4")
+colnames(cast_patient) <- c("Genes", "Stage1", "Stage2", "Stage3", "Stage4")
+#colnames(cast_patient) <- c("Genes", "Grade1", "Grade2", "Grade3", "Grade4")
 #colnames(cast_patient) <- c("Genes", "G1", "G3")
 melt_patient <- melt(cast_patient)
 colnames(melt_patient) <- c("Genes", "Stages", "Difference")
@@ -314,3 +314,107 @@ ggplot(melt_patient) +
         axis.text.y = element_text(size = 8),
         axis.title.x = element_blank(),
         legend.text = element_text(size = 8))
+
+write.csv(cast_patient, "Lung_LUAD_TCGA_MeanExpressionChange_MCF7iPSOverlap_ByStage.csv")
+
+
+##### To find most likely/intersting/promising candidates - BY GRADE:
+#MCF7/iPS Overlap - GRADE
+hits <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Lung/luad_tcga_prov/tcga/Analysis/MeanExpressionChanges/MCF7iPSOverlap/Lung_LUAD_TCGA_MeanExpressionChange_MCF7iPSOverlap_ByGrade.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE))
+
+#Total iPS Overlap - GRADE
+hits <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Lung/luad_tcga_prov/tcga/Analysis/MeanExpressionChanges/TotaliPSOverlap/Lung_LUAD_TCGA_MeanExpressionChange_TotaliPSOverlap_ByGrade.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE))
+
+#A549/iPS Overlap - GRADE
+hits <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Lung/luad_tcga_prov/tcga/Analysis/MeanExpressionChanges/A549iPSOverlap/Lung_LUAD_TCGA_MeanExpressionChange_A549iPSOverlap_ByGrade.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE))
+
+hits_up <- filter(hits, Grade2 > 0 & Grade3 > Grade2 & Grade4 > Grade3)
+hits_down <- filter(hits, Grade2 < 0 & Grade3 < Grade2, Grade4 < Grade3)
+
+hits_up$DeltaG3toG2 <- hits_up$Grade3 - hits_up$Grade2
+hits_up$DeltaG4toG3 <- hits_up$Grade4 - hits_up$Grade3
+hits_up <- arrange(hits_up, -DeltaG4toG3, -DeltaG3toG2, -Grade2)
+
+hits_down$DeltaG3toG2 <- hits_down$Grade3 - hits_down$Grade2
+hits_down$DeltaG4toG3 <- hits_down$Grade4 - hits_down$Grade3
+hits_down <- arrange(hits_down, DeltaG4toG3, DeltaG3toG2, Grade2)
+
+hits_up <- subset(hits_up, select = -X)
+hits_up$Genes <- factor(hits_up$Genes, levels = hits_up$Genes)
+m_hits_up <- melt(hits_up)
+
+ggplot(m_hits_up, aes(x=variable, y=Genes)) + 
+  geom_tile(aes(fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(name="Genes", limits = rev(levels(hits_up$Genes))) + 
+  geom_text(aes(x=variable, y=Genes, label = round(value, digits = 2)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 8))
+
+hits_down <- subset(hits_down, select = -X)
+hits_down$Genes <- factor(hits_down$Genes, levels = hits_down$Genes)
+m_hits_down <- melt(hits_down)
+
+ggplot(m_hits_down, aes(x=variable, y=Genes)) + 
+  geom_tile(aes(fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(name="Genes", limits = rev(levels(hits_down$Genes))) + 
+  geom_text(aes(x=variable, y=Genes, label = round(value, digits = 2)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 8))
+
+##### To find most likely/intersting/promising candidates - BY STAGE:
+#MCF7/iPS Overlap - STAGE
+st_hits <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Lung/luad_tcga_prov/tcga/Analysis/MeanExpressionChanges/MCF7iPSOverlap/Lung_LUAD_TCGA_MeanExpressionChange_MCF7iPSOverlap_ByStage.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE))
+
+#Total iPS Overlap - STAGE
+st_hits <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Lung/luad_tcga_prov/tcga/Analysis/MeanExpressionChanges/TotaliPSOverlap/Lung_LUAD_TCGA_MeanExpressionChange_TotaliPSOverlap_ByStage.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE))
+
+#A549/iPS Overlap - STAGE
+st_hits <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Lung/luad_tcga_prov/tcga/Analysis/MeanExpressionChanges/A549iPSOverlap/Lung_LUAD_TCGA_MeanExpressionChange_A549iPSOverlap_ByStage.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE))
+
+st_hits_up <- filter(st_hits, Stage2 > 0 & Stage3 > Stage2 & Stage4 > Stage3)
+st_hits_down <- filter(st_hits, Stage2 < 0 & Stage3 < Stage2 & Stage4 < Stage3)
+
+st_hits_up$DeltaS3toS2 <- st_hits_up$Stage3 - st_hits_up$Stage2
+st_hits_up$DeltaS4toS3 <- st_hits_up$Stage4 - st_hits_up$Stage3
+st_hits_up <- arrange(st_hits_up, -DeltaS4toS3, -DeltaS3toS2, -Stage2)
+
+st_hits_down$DeltaS3toS2 <- st_hits_down$Stage3 - st_hits_down$Stage2
+st_hits_down$DeltaS4toS3 <- st_hits_down$Stage4 - st_hits_down$Stage3
+st_hits_down <- arrange(st_hits_down, DeltaS4toS3, DeltaS3toS2, Stage2)
+
+st_hits_up <- subset(st_hits_up, select = -X)
+st_hits_up$Genes <- factor(st_hits_up$Genes, levels = st_hits_up$Genes)
+m_st_hits_up <- melt(st_hits_up)
+
+ggplot(m_st_hits_up, aes(x=variable, y=Genes)) + 
+  geom_tile(aes(fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(name="Genes", limits = rev(levels(st_hits_up$Genes))) + 
+  geom_text(aes(x=variable, y=Genes, label = round(value, digits = 2)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 8))
+
+st_hits_down <- subset(st_hits_down, select = -X)
+st_hits_down$Genes <- factor(st_hits_down$Genes, levels = st_hits_down$Genes)
+m_st_hits_down <- melt(st_hits_down)
+
+ggplot(m_st_hits_down, aes(x=variable, y=Genes)) + 
+  geom_tile(aes(fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(name="Genes", limits = rev(levels(st_hits_down$Genes))) + 
+  geom_text(aes(x=variable, y=Genes, label = round(value, digits = 2)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 8))
+
+intersect(hits_up$Genes, st_hits_up$Genes)
+intersect(hits_down$Genes, st_hits_down$Genes)
