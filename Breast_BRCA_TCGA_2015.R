@@ -110,11 +110,11 @@ stage_diffs <- subset(stage_diffs, GENE %in% huvfips_overlap) #Subset rows that 
 #stage_diffs <- subset(stage_diffs, Specific_Stages %in% stages)
 #stage_diffs <- subset(stage_diffs, General_Stages %in% stage)
 #stage_diffs <- filter(stage_diffs, ((Tumor == "T3") | (Tumor == "T2")))
-stage_diffs <- filter(stage_diffs, Tumor == "T1")
-#stage_diffs <- filter(stage_diffs, General_Stages == "IV")
-#stage_diffs <- filter(stage_diffs, Metastasis == "M1")
+#stage_diffs <- filter(stage_diffs, Tumor == "T3")
+#stage_diffs <- filter(stage_diffs, General_Stages == "I")
+stage_diffs <- filter(stage_diffs, Metastasis == "M0")
 #stage_diffs <- filter(stage_diffs, ER_STATUS == "Positive")
-stage_diffs <- filter(stage_diffs, HER2_STATUS == "Positive")
+#stage_diffs <- filter(stage_diffs, HER2_STATUS == "Positive")
 #stage_diffs <- filter(stage_diffs, PR_STATUS == "Negative")
 
 
@@ -236,8 +236,32 @@ t_patient <- cbind.data.frame(t_patient, mean)
 
 t_patient_lo <- t_patient #For Low
 t_patient_2 <- t_patient
-#t_patient_3 <- t_patient
-#t_patient_hi <- t_patient #For Hi 
+t_patient_3 <- t_patient
+t_patient_hi <- t_patient #For Hi 
+
+####### T-tests for difference in Stages
+stage1 <- data.frame(t(t_patient_lo))
+stage4 <- data.frame(t(t_patient_hi))
+results <- mapply(t.test, stage1, stage4)
+results <- plyr::ldply(results["p.value",], data.frame)
+colnames(results) <- c("Genes", "pvalues")
+results <- arrange(results, desc(pvalues))
+results$Stage <- "Metastasis"
+
+results$colorscale <- cut(results$pvalues, breaks = c(0,0.05,0.1,0.25,0.5,1),right = FALSE)
+
+ggplot(results) + 
+  geom_tile(aes(x=Stage, y=Genes, fill = colorscale), color = "white") + 
+  scale_fill_brewer(palette = "PRGn") +
+  scale_y_discrete(name="", limits = results$Genes) + 
+  geom_text(aes(x=Stage, y=Genes, label = round(pvalues, digits = 2)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 8)) 
+
+write.csv(results, "Lung_TCGA_Stats_Meta.csv")
+#######
 
 colnames(t_patient_lo)[colnames(t_patient_lo) == 'mean'] <- 'mean_1'
 colnames(t_patient_2)[colnames(t_patient_2) == 'mean'] <- 'mean_2'

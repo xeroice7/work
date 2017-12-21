@@ -109,6 +109,8 @@ a549ips_overlap <- intersect(a549fips_overlap$V1, a549huvips_overlap$V1)
 # Examine stage differences between our MCF7/iPS overlap without a somatic filter (29 genes)
 #iPS to MCF7 Comparisons (No Somatic Filters - can include somatic hits)
 mcf7huvips_overlap <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/02-19-16/MS Analysis/iPS Comparisons/MCF7vsHUViPS/HUViPSMCF7OverlapGENE.csv", header = FALSE, sep = ",", stringsAsFactors = FALSE))
+mcf7fips_overlap <- data.frame(read.csv("~/Desktop/Clay/Mass Spec Results/02-19-16/MS Analysis/iPS Comparisons/MCF7vsFiPS/FiPSMCF7OverlapGENE.csv", header = FALSE, sep = ",", stringsAsFactors = FALSE))
+mcf7ips_overlap <- intersect(mcf7fips_overlap$V1, mcf7huvips_overlap$V1)
 
 #A smaller subset of genes pulled from FiPS and HUViPS MS sets to test clustering
 testgenes <- read.csv("~/Desktop/TestGeneSetUnique.csv", sep=",", header = TRUE, stringsAsFactors = FALSE) # Import CSV of surface expression
@@ -132,15 +134,15 @@ stages <- factor(c("I", "IA", "IB", "II", "IIA", "IIB", "IIIA", "IIIB", "IV"))
 stages <- ordered(stages, levels = c("I", "IA", "IB", "II", "IIA", "IIB", "IIIA", "IIIB", "IV"))
 
 stage_diffs <- patientDF
-stage_diffs <- subset(stage_diffs, GENE %in% mcf7ips_overlap) #Subset rows that are matches to those in the targets
+stage_diffs <- subset(stage_diffs, GENE %in% a549ips_overlap) #Subset rows that are matches to those in the targets
 #stage_diffs <- subset(stage_diffs, GENE %in% surface_genes)
 #stage_diffs <- subset(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM %in% meta)
 #stage_diffs <- subset(stage_diffs, AJCC_TUMOR_PATHOLOGIC_PT %in% grades)
 #stage_diffs <- subset(stage_diffs, Specific_Stage %in% stages)
 #stage_diffs <- filter(stage_diffs, ((Tumor == "T3") | (Tumor == "T2")))
-#stage_diffs <- filter(stage_diffs, General_Grade == "T1")
-stage_diffs <- filter(stage_diffs, General_Stages == "I")
-#stage_diffs <- filter(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM == "M1")
+stage_diffs <- filter(stage_diffs, General_Grade == "T1")
+#stage_diffs <- filter(stage_diffs, General_Stages == "I")
+#stage_diffs <- filter(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM == "M0")
 
 patient <- dcast(stage_diffs, PATIENT_ID+General_Grade+Specific_Grade+General_Stages+Specific_Stage+AJCC_METASTASIS_PATHOLOGIC_PM ~ GENE, value.var = "EXPRESSION_LEVEL")
 
@@ -188,8 +190,8 @@ grade4 <- test1
 #grade1 <- grade1[!rownames(grade1) %in% remove,] #use if standard deviation is 0 on a row
 #grade4 <- grade4[!rownames(grade4) %in% remove,] #use if standard deviation is 0 on a row
 #x <- cor(t(test1))
-y <- cor(t(grade1), t(grade4))
-
+y <- cor(t(grade1), t(grade3))
+y <- cor(t(grade1))
 #hc <- hclust(as.dist(1-cor(t(test1))))
 #plot(hc)
 #heatmap(test1, Rowv=as.dendrogram(hc) , Colv=NA, col=greenred(10), cexRow = 0.2)
@@ -267,6 +269,30 @@ t_patient_2 <- t_patient
 t_patient_3 <- t_patient
 t_patient_hi <- t_patient #For Hi 
 
+####### T-tests for difference in Stages
+stage1 <- data.frame(t(t_patient_lo))
+stage4 <- data.frame(t(t_patient_hi))
+results <- mapply(t.test, stage1, stage4)
+results <- plyr::ldply(results["p.value",], data.frame)
+colnames(results) <- c("Genes", "pvalues")
+results <- arrange(results, desc(pvalues))
+results$Stage <- "Grade3"
+
+results$colorscale <- cut(results$pvalues, breaks = c(0,0.05,0.1,0.25,0.5,1),right = FALSE)
+
+ggplot(results) + 
+  geom_tile(aes(x=Stage, y=Genes, fill = colorscale), color = "white") + 
+  scale_fill_brewer(palette = "PRGn") +
+  scale_y_discrete(name="", limits = results$Genes) + 
+  geom_text(aes(x=Stage, y=Genes, label = round(pvalues, digits = 2)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 8)) 
+
+write.csv(results, "Lung_LUAD_TCGA_Stats_Meta.csv")
+#######
+
 colnames(t_patient_lo)[colnames(t_patient_lo) == 'mean'] <- 'mean_1'
 colnames(t_patient_2)[colnames(t_patient_2) == 'mean'] <- 'mean_2'
 colnames(t_patient_3)[colnames(t_patient_3) == 'mean'] <- 'mean_3'
@@ -275,17 +301,17 @@ colnames(t_patient_hi)[colnames(t_patient_hi) == 'mean'] <- 'mean_4'
 t_patient_m1 <- merge(t_patient_lo, t_patient_2, by = "row.names")
 t_patient_m2 <- merge(t_patient_3, t_patient_hi, by = "row.names")
 t_patient_means <- merge(t_patient_m1, t_patient_m2, by = "Row.names")
-#t_patient_means <- t_patient_m1
+t_patient_means <- t_patient_m1
 
 t_patient_means$mean_diff_1 <- t_patient_means$mean_1-t_patient_means$mean_1
 t_patient_means$mean_diff_2 <- t_patient_means$mean_2-t_patient_means$mean_1
 t_patient_means$mean_diff_3 <- t_patient_means$mean_3-t_patient_means$mean_1
 t_patient_means$mean_diff_4 <- t_patient_means$mean_4-t_patient_means$mean_1
 
-cast_patient <- cbind.data.frame(t_patient_means$Row.names, t_patient_means$mean_diff_1, t_patient_means$mean_diff_2, t_patient_means$mean_diff_3, t_patient_means$mean_diff_4)
+cast_patient <- cbind.data.frame(t_patient_means$Row.names, t_patient_means$mean_diff_1, t_patient_means$mean_diff_4)#, t_patient_means$mean_diff_3, t_patient_means$mean_diff_4)
 colnames(cast_patient) <- c("Genes", "Stage1", "Stage2", "Stage3", "Stage4")
 #colnames(cast_patient) <- c("Genes", "Grade1", "Grade2", "Grade3", "Grade4")
-#colnames(cast_patient) <- c("Genes", "G1", "G3")
+colnames(cast_patient) <- c("Genes", "Grade1", "Grade3")
 melt_patient <- melt(cast_patient)
 colnames(melt_patient) <- c("Genes", "Stages", "Difference")
 melt_patient$Genes <- as.factor(melt_patient$Genes)
@@ -303,7 +329,7 @@ ggplot(melt_patient, aes(x=Stages, y=Genes)) +
 
 # To see descending values
 #melt_patient <- filter(melt_patient, Stages == "ER+/HER2-")
-melt_patient <- filter(melt_patient, Stages == "Grade4")
+melt_patient <- filter(melt_patient, Stages == "Grade3")
 melt_patient <- arrange(melt_patient, desc(Difference))
 ggplot(melt_patient) + 
   geom_tile(aes(x=Stages, y=Genes, fill = Difference)) + 

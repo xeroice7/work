@@ -126,8 +126,9 @@ stage_diffs <- subset(stage_diffs, GENE %in% huvfips_overlap) #Subset rows that 
 #stage_diffs <- subset(stage_diffs, Specific_Stage %in% stages)
 #stage_diffs <- filter(stage_diffs, ((Tumor == "T3") | (Tumor == "T2")))
 #stage_diffs <- filter(stage_diffs, AJCC_TUMOR_PATHOLOGIC_PT %in% c("T1", "T1a", "T1b"))
-stage_diffs <- filter(stage_diffs, General_Stages == "IV")
-#stage_diffs <- filter(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM %in% c("M0"))
+stage_diffs <- filter(stage_diffs, AJCC_TUMOR_PATHOLOGIC_PT == "T4")
+#stage_diffs <- filter(stage_diffs, General_Stages == "I")
+#stage_diffs <- filter(stage_diffs, AJCC_METASTASIS_PATHOLOGIC_PM %in% c("M1", "M1a", "M1b"))
 
 patient <- dcast(stage_diffs, PATIENT_ID+AJCC_TUMOR_PATHOLOGIC_PT+Specific_Stage+AJCC_METASTASIS_PATHOLOGIC_PM ~ GENE, value.var = "EXPRESSION_LEVEL")
 
@@ -185,3 +186,140 @@ heatmap.2(y,
           #ColSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black"),
           #RowSideColors = ifelse(rownames(x) %in% ipsgene, "red", "black")
 )
+
+genecor <- y
+output <- vector("double", ncol(genecor))
+for (i in 1:ncol(genecor)){
+  output[i] <- genecor[i,i]
+}
+extracted <- cbind.data.frame(rownames(y), output)
+colnames(extracted) <- c("Gene", "Correlation")
+
+#####To use heatmap.2 function:
+extracted <- extracted %>% remove_rownames %>% column_to_rownames(var="Gene")
+extracted <- cbind(extracted, extracted)
+extracted <- as.matrix(extracted)
+ext_clust <- hclust(dist(1-extracted))
+heatmap.2(extracted,
+          Rowv=as.dendrogram(ext_clust), 
+          Colv=NA, 
+          col=bluered(256), 
+          #breaks = breaks,
+          cexRow = 0.7, 
+          cexCol = 0.7, 
+          scale = "none", 
+          trace = "none")
+
+######To use geom_tile function:
+extracted <- melt(extracted)
+ggplot(extracted, aes(x=variable, y=Gene)) +
+  geom_tile(aes(fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") + 
+  scale_y_discrete(name="", limits = rev(levels(extracted$Gene))) + 
+  geom_text(aes(x=variable, y=Gene, label=round(value, digits = 2)), size=2) + 
+  xlab("Correlation between Grade 1 vs Grade 2") + 
+  theme(axis.text.x = element_blank(), 
+        axis.text.y = element_text(size=6),
+        legend.text = element_text(size=8), 
+        axis.title.x = element_text(size=8)) 
+
+## For plot to sort numerically
+extracted <- arrange(extracted, desc(value))
+ggplot(extracted) +
+  geom_tile(aes(x=variable, y=Gene, fill=value)) + 
+  scale_fill_distiller(palette = "RdBu") + 
+  scale_y_discrete(name="", limits = extracted$Gene) + 
+  geom_text(aes(x=variable, y=Gene, label = round(value, digits = 2)), size=2) + 
+  xlab("Correlation between Grade 1 vs Grade 2") + 
+  theme(axis.text.x = element_blank(), 
+        axis.text.y = element_text(size=6),
+        legend.text = element_text(size=8), 
+        axis.title.x = element_text(size=8)) 
+
+############
+#To look at mean stage differences
+############
+t_patient <- t(patient)
+mean <- rowMeans(t_patient, na.rm = FALSE)
+t_patient <- cbind.data.frame(t_patient, mean)
+
+t_patient_lo <- t_patient #For Low
+t_patient_2 <- t_patient
+t_patient_3 <- t_patient
+t_patient_hi <- t_patient #For Hi 
+
+####### T-tests for difference in Stages
+stage1 <- data.frame(t(t_patient_lo))
+stage4 <- data.frame(t(t_patient_hi))
+results <- mapply(t.test, stage1, stage4)
+results <- plyr::ldply(results["p.value",], data.frame)
+colnames(results) <- c("Genes", "pvalues")
+results <- arrange(results, desc(pvalues))
+results$Stage <- "Grade4"
+
+results$colorscale <- cut(results$pvalues, breaks = c(0,0.05,0.1,0.25,0.5,1),right = FALSE)
+
+ggplot(results) + 
+  geom_tile(aes(x=Stage, y=Genes, fill = colorscale), color = "white") + 
+  scale_fill_brewer(palette = "PRGn") +
+  scale_y_discrete(name="", limits = results$Genes) + 
+  geom_text(aes(x=Stage, y=Genes, label = round(pvalues, digits = 2)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 8)) 
+
+write.csv(results, "Lung_LUSC_TCGA_Stats_Grade.csv")
+#######
+
+colnames(t_patient_lo)[colnames(t_patient_lo) == 'mean'] <- 'mean_1'
+colnames(t_patient_2)[colnames(t_patient_2) == 'mean'] <- 'mean_2'
+colnames(t_patient_3)[colnames(t_patient_3) == 'mean'] <- 'mean_3'
+colnames(t_patient_hi)[colnames(t_patient_hi) == 'mean'] <- 'mean_4'
+
+t_patient_m1 <- merge(t_patient_lo, t_patient_2, by = "row.names")
+t_patient_m2 <- merge(t_patient_3, t_patient_hi, by = "row.names")
+t_patient_means <- merge(t_patient_m1, t_patient_m2, by = "Row.names")
+#t_patient_means <- t_patient_m1
+
+t_patient_means$mean_diff_1 <- t_patient_means$mean_1-t_patient_means$mean_1
+t_patient_means$mean_diff_2 <- t_patient_means$mean_2-t_patient_means$mean_1
+t_patient_means$mean_diff_3 <- t_patient_means$mean_3-t_patient_means$mean_1
+t_patient_means$mean_diff_4 <- t_patient_means$mean_4-t_patient_means$mean_1
+
+cast_patient <- cbind.data.frame(t_patient_means$Row.names, t_patient_means$mean_diff_1, t_patient_means$mean_diff_2, t_patient_means$mean_diff_3)#, t_patient_means$mean_diff_4)
+#colnames(cast_patient) <- c("Genes", "Stage1", "Stage2", "Stage3")#, "Stage4")
+#colnames(cast_patient) <- c("Genes", "HER2+", "ER+/HER2-", "ER-/HER2-")
+colnames(cast_patient) <- c("Genes", "Grade1", "Grade2", "Grade3")
+melt_patient <- melt(cast_patient)
+colnames(melt_patient) <- c("Genes", "Stages", "Difference")
+melt_patient$Genes <- as.factor(melt_patient$Genes)
+#plot_patient <- cbind.data.frame(t_patient$Row.names, t_patient$mean_diff)
+
+ggplot(melt_patient, aes(x=Stages, y=Genes)) + 
+  geom_tile(aes(fill=Difference)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(name="", limits = rev(levels(melt_patient$Genes))) + 
+  geom_text(aes(x=Stages, y=Genes, label = round(Difference, digits = 2)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 8))
+
+
+# To see descending values
+#melt_patient <- filter(melt_patient, Stages == "ER+/HER2-")
+melt_patient <- filter(melt_patient, Stages == "Grade3")
+melt_patient <- arrange(melt_patient, desc(Difference))
+ggplot(melt_patient) + 
+  geom_tile(aes(x=Stages, y=Genes, fill = Difference)) + 
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(name="", limits = melt_patient$Genes) + 
+  geom_text(aes(x=Stages, y=Genes, label = round(Difference, digits = 2)), size=2) + 
+  theme(axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 8),
+        axis.title.x = element_blank(),
+        legend.text = element_text(size = 8)) 
+
+
+write.csv(cast_patient, "TripNeg_TotaliPSOverlap_ByGrade.csv")
