@@ -145,7 +145,7 @@ set.seed(7)
 #Find most important factors
 control <- trainControl(method="repeatedcv", number=2, repeats=2)
 fit <- randomForest(General_Stages~., data=stage)
-
+fit <- rpart(General_Stages ~ ., data = stage, method = "class")
 # train the model
 model <- train(General_Stages~., data=stage, method="lvq", preProcess="scale", trControl=control)
 
