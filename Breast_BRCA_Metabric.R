@@ -1,6 +1,6 @@
-######
+####
 # cBio - Breast Adenocarcinoma Metabric - 2509 Patients
-#####
+####
 
 #Necessary Packages ===========================================
 library(tidyverse)
@@ -48,8 +48,6 @@ patientdata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Breast/brca_me
 
 patientDF <- merge(x = tumordata, y = patientdata, by = "PATIENT_ID", all = TRUE)
 
-patientDF <- subset(patientDF, select = c(PATIENT_ID, GRADE, TUMOR_STAGE, THREEGENE)) 
-
 #Tidy Patient Data ============================================
 splits <- str_split_fixed(patientDF$THREEGENE, " ", 2)
 patientDF <- cbind.data.frame(splits, patientDF)
@@ -60,21 +58,6 @@ splits <- str_split_fixed(patientDF$Proliferation, " ", 2)
 patientDF <- cbind.data.frame(splits, patientDF)
 names(patientDF)[names(patientDF) == '1'] <- 'RATE_OF_PROLIF'
 patientDF <- subset(patientDF, select= -c(2, Proliferation))
-
-splits <- str_split_fixed(patientDF$Markers, "/", 2)
-patientDF <- cbind.data.frame(splits, patientDF)
-names(patientDF)[names(patientDF) == '1'] <- 'ER_STATUS'
-names(patientDF)[names(patientDF) == '2'] <- 'HER_STATUS'
-patientDF <- subset(patientDF, select= -c(Markers, THREEGENE))
-
-patientDF$new <- as.character(patientDF$ER_STATUS)
-patientDF$new[patientDF$new == "null"] <- NA
-patientDF$new[patientDF$new == "ER-"] <- "HER2-"
-patientDF$new[patientDF$new == "ER+"] <- "HER2-"
-patientDF$HER_STATUS <- as.factor(patientDF$new)
-patientDF <- subset(patientDF, select= -new)
-patientDF$ER_STATUS[patientDF$ER_STATUS == "null"] <- NA
-patientDF$ER_STATUS[patientDF$ER_STATUS == "HER2+"] <- NA
 
 #Load Clinical Data ================================================
 expressiondata <- read.csv("~/Desktop/Clay/Mass Spec Results/WebData/Breast/brca_metabric/data_expression.csv", sep = ",", stringsAsFactors = FALSE, check.names = FALSE)
@@ -92,8 +75,6 @@ colnames(expressionDF) <- c("GENE", "PATIENT_ID", "EXPRESSION_LEVEL")
 
 #Merge Patient and Clinical Data ==================================== 
 patientDF <- merge(x = expressionDF, y = patientDF, by = "PATIENT_ID")
-
-
 
 #Additional Filter Parameters =======================================
 grades <- factor(c("1", "2", "3"))
