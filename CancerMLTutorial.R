@@ -616,3 +616,152 @@ prop_table %>%
 h2o.shutdown()
 
 sessionInfo()
+
+
+###
+# Dealing with unbalanced data in machine learning
+
+# https://shiring.github.io/machine_learning/2017/04/02/unbalanced
+
+library(caret)
+
+summary(bc_data$classes)
+
+# Modeling the original unbalanced data
+# Here is the same model I used in my webinar example: I randomly divide the data into training and test sets (stratified by class) and perform Random Forest modeling with 10 x 10 repeated cross-validation. Final model performance is then measured on the test set.
+set.seed(42)
+index <- createDataPartition(bc_data$classes, p = 0.7, list = FALSE)
+train_data <- bc_data[index, ]
+test_data  <- bc_data[-index, ]
+set.seed(42)
+model_rf <- caret::train(classes ~ .,
+                         data = train_data,
+                         method = "rf",
+                         preProcess = c("scale", "center"),
+                         trControl = trainControl(method = "repeatedcv", 
+                                                  number = 10, 
+                                                  repeats = 10, 
+                                                  verboseIter = FALSE))
+final <- data.frame(actual = test_data$classes,
+                    predict(model_rf, newdata = test_data, type = "prob"))
+final$predict <- ifelse(final$benign > 0.5, "benign", "malignant")
+cm_original <- confusionMatrix(final$predict, test_data$classes)
+
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 10, 
+                     repeats = 10, 
+                     verboseIter = FALSE,
+                     sampling = "down")
+
+# Under-sampling
+# Luckily, caret makes it very easy to incorporate over- and under-sampling techniques with cross-validation resampling. We can simply add the sampling option to our trainControl and choose down for under- (also called down-) sampling. The rest stays the same as with our original model.
+set.seed(42)
+model_rf_under <- caret::train(classes ~ .,
+                               data = train_data,
+                               method = "rf",
+                               preProcess = c("scale", "center"),
+                               trControl = ctrl)
+final_under <- data.frame(actual = test_data$classes,
+                          predict(model_rf_under, newdata = test_data, type = "prob"))
+final_under$predict <- ifelse(final_under$benign > 0.5, "benign", "malignant")
+cm_under <- confusionMatrix(final_under$predict, test_data$classes)
+
+#Oversampling
+#For over- (also called up-) sampling we simply specify sampling = "up".
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 10, 
+                     repeats = 10, 
+                     verboseIter = FALSE,
+                     sampling = "up")
+
+set.seed(42)
+model_rf_over <- caret::train(classes ~ .,
+                              data = train_data,
+                              method = "rf",
+                              preProcess = c("scale", "center"),
+                              trControl = ctrl)
+final_over <- data.frame(actual = test_data$classes,
+                         predict(model_rf_over, newdata = test_data, type = "prob"))
+final_over$predict <- ifelse(final_over$benign > 0.5, "benign", "malignant")
+cm_over <- confusionMatrix(final_over$predict, test_data$classes)
+
+# ROSE
+# Besides over- and under-sampling, there are hybrid methods that combine under-sampling with the generation of additional data. Two of the most popular are ROSE and SMOTE.
+# You implement them the same way as before, this time choosing sampling = "rose"…
+
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 10, 
+                     repeats = 10, 
+                     verboseIter = FALSE,
+                     sampling = "rose")
+
+set.seed(42)
+model_rf_rose <- caret::train(classes ~ .,
+                              data = train_data,
+                              method = "rf",
+                              preProcess = c("scale", "center"),
+                              trControl = ctrl)
+final_rose <- data.frame(actual = test_data$classes,
+                         predict(model_rf_rose, newdata = test_data, type = "prob"))
+final_rose$predict <- ifelse(final_rose$benign > 0.5, "benign", "malignant")
+cm_rose <- confusionMatrix(final_rose$predict, test_data$classes)
+
+# SMOTE
+# … or by choosing sampling = "smote" in the trainControl settings.
+
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 10, 
+                     repeats = 10, 
+                     verboseIter = FALSE,
+                     sampling = "smote")
+
+set.seed(42)
+model_rf_smote <- caret::train(classes ~ .,
+                               data = train_data,
+                               method = "rf",
+                               preProcess = c("scale", "center"),
+                               trControl = ctrl)
+final_smote <- data.frame(actual = test_data$classes,
+                          predict(model_rf_smote, newdata = test_data, type = "prob"))
+final_smote$predict <- ifelse(final_smote$benign > 0.5, "benign", "malignant")
+cm_smote <- confusionMatrix(final_smote$predict, test_data$classes)
+
+# Predictions
+# Now let’s compare the predictions of all these models:
+
+models <- list(original = model_rf,
+               under = model_rf_under,
+               over = model_rf_over,
+               smote = model_rf_smote,
+               rose = model_rf_rose)
+
+resampling <- resamples(models)
+bwplot(resampling)
+
+library(dplyr)
+comparison <- data.frame(model = names(models),
+                         Sensitivity = rep(NA, length(models)),
+                         Specificity = rep(NA, length(models)),
+                         Precision = rep(NA, length(models)),
+                         Recall = rep(NA, length(models)),
+                         F1 = rep(NA, length(models)))
+
+for (name in names(models)) {
+  model <- get(paste0("cm_", name))
+  
+  comparison[comparison$model == name, ] <- filter(comparison, model == name) %>%
+    mutate(Sensitivity = model$byClass["Sensitivity"],
+           Specificity = model$byClass["Specificity"],
+           Precision = model$byClass["Precision"],
+           Recall = model$byClass["Recall"],
+           F1 = model$byClass["F1"])
+}
+
+library(tidyr)
+comparison %>%
+  gather(x, y, Sensitivity:F1) %>%
+  ggplot(aes(x = x, y = y, color = model)) +
+  geom_jitter(width = 0.2, alpha = 0.5, size = 3)
+
+sessionInfo()
+
