@@ -13,6 +13,10 @@ library(caret)
 library(rpart)
 library(randomForest)
 library(mlbench)
+library(rattle)
+library(rpart.plot)
+library(class)
+library(gmodels)
 
 #Load Gene Filters =========================================
 #Total iPS overlaps (including somatic targets - 93 genes)
@@ -110,7 +114,7 @@ names <- expressiondata$Hugo_Symbol[doubles]
 new_names <- paste(names, "-1", sep="")
 expressiondata$Hugo_Symbol[doubles] <- new_names
 
-expression <- t(expressiondata)
+#expression <- t(expressiondata)
 
 #Melt data
 expressionDF <- melt(expressiondata, id.vars = "Hugo_Symbol")
@@ -130,31 +134,267 @@ expressionDF <- dcast(expressionDF, PATIENT_ID ~ GENE, value.var = "EXPRESSION_L
 
 #Merging Clinical and Patient Data ===================================== 
 patientDF <- merge(x = expressionDF, y = patientdata, by = "PATIENT_ID")
-stage <- filter(patientDF, General_Stages == "I" | General_Stages == "IV")
-stage1 <- cbind.data.frame(stage$PATIENT_ID, stage$General_Stages)
-colnames(stage1) <- c("PATIENT_ID", "General_Stages")
-stage <- stage[1:25]
-stage <- merge(x = stage, y = stage1, by = "PATIENT_ID")
-names(stage) <- gsub(x = names(stage), pattern = "-", replacement = "")  
 
-#pDF <- sample_n(patientDF, 100)
-#sDF <- sample_n(stage, 50)
+#ML Algos ==============================================================
+data <- patientDF
+#stage <- filter(patientDF, General_Stages == "I" | General_Stages == "IV")
+stageIV <- filter(data, General_Stages == "IV")
+stageI <- filter(data, General_Stages == "I")
+#stageI <- sample_n(stageI, 175)
+stage300 <- rbind.data.frame(stageI, stageIV)
+stage <- stage300[,c(1,50:10050,20533)]
+stage$General_Stages <- ordered(stage$General_Stages, levels = c("I", "IV"))
+#stage1 <- cbind.data.frame(stage$PATIENT_ID, stage$General_Stages)
+#colnames(stage1) <- c("PATIENT_ID", "General_Stages")
+gradeT1 <- filter(data, General_Grade == "T1")
+gradeT3 <- filter(data, General_Grade == "T3")
+gradeT4 <- filter(data, General_Grade == "T4")
 
-set.seed(7)
+gradeT1T3 <- rbind.data.frame(gradeT1, gradeT3)
+grade <- gradeT1T3[,c(1,50:1050,20532)]
+grade$General_Grade <- ordered(grade$General_Grade, levels = c("T1", "T3"))
+#stage <- merge(x = stage, y = stage1, by = "PATIENT_ID")
+#names(stage) <- gsub(x = names(stage), pattern = "-", replacement = "")  
+
+#names.use <- names(data)[(names(data) %in% gene)]
+#names.use <- names(data)[(names(data) %in% a549ips_overlap)]
+names.use <- names(data)[(names(data) %in% totaltestgenes)]
+len <- length(names.use)
+
+#data.ips <- data[, c("PATIENT_ID", "General_Grade", names.use)]
+#data.a549 <- data[, c("PATIENT_ID", "General_Grade", names.use)]
+data.genes <- data[, c("PATIENT_ID", "General_Grade", names.use)]
+#data.rand <- data[, sample(ncol(data), len)]
+#data.rand <- cbind.data.frame(data$PATIENT_ID, data$General_Grade, data.rand)
+
+randomdata.a549 <- data[, sample(ncol(data), len)]
+randomdata.a549 <- cbind.data.frame(data$PATIENT_ID, data$General_Grade, randomdata.a549)
+names(randomdata.a549)[names(randomdata.a549) == 'data$PATIENT_ID'] <- 'PATIENT_ID'
+names(randomdata.a549)[names(randomdata.a549) == 'data$General_Grade'] <- 'General_Grade'
+
+#names(data.rand)[names(data.rand) == 'data$PATIENT_ID'] <- 'PATIENT_ID'
+#names(data.rand)[names(data.rand) == 'data$General_Grade'] <- 'General_Grade'
+#data.ips <- filter(data.ips, General_Grade == "T1" | General_Grade == "T3")
+#data.ips$General_Grade <- ordered(data.ips$General_Grade, levels = c("T1", "T3"))
+data.genes <- filter(data.genes, General_Grade == "T1" | General_Grade == "T3")
+data.genes$General_Grade <- ordered(data.genes$General_Grade, levels = c("T1", "T3"))
+#data.a549 <- filter(data.a549, General_Grade == "T1" | General_Grade == "T3")
+#data.a549$General_Grade <- ordered(data.a549$General_Grade, levels = c("T1", "T3"))
+#randomdata.a549 <- filter(randomdata.a549, General_Grade == "T1" | General_Grade == "T3")
+#randomdata.a549$General_Grade <- ordered(randomdata.a549$General_Grade, levels = c("T1", "T3"))
+
+#data.rand <- filter(data.rand, General_Grade == "T1" | General_Grade == "T3")
+#data.rand$General_Grade <- ordered(data.rand$General_Grade, levels = c("T1", "T3"))
+
+# Set a random seed
+set.seed(754)
 
 #Find most important factors
-control <- trainControl(method="repeatedcv", number=2, repeats=2)
-fit <- randomForest(General_Stages~., data=stage)
-fit <- rpart(General_Stages ~ ., data = stage, method = "class")
+#control <- trainControl(method="repeatedcv", number=2, repeats=2)
+#fit <- randomForest(General_Stages~., data=stage)
+#fit <- rpart(General_Stages ~ ., data = stage, method = "class")
+
 # train the model
-model <- train(General_Stages~., data=stage, method="lvq", preProcess="scale", trControl=control)
+#model <- train(General_Stages~., data=stage, method="lvq", preProcess="scale", trControl=control)
 
 # estimate variable importance
-importance <- varImp(model, scale=FALSE)
+#importance <- varImp(model, scale=FALSE)
 # summarize importance
-print(importance)
+#print(importance)
 # plot importance
-plot(importance)
+#plot(importance)
+
+# Create index to split based on labels  
+#index.ips <- createDataPartition(data.ips$General_Grade, p=0.75, list=FALSE)
+#index.rand <- createDataPartition(data.rand$General_Grade, p=0.75, list=FALSE)
+index.a549 <- createDataPartition(data.a549$General_Grade, p=0.75, list = FALSE)
+index.randomdata.a549 <- createDataPartition(randomdata.a549$General_Grade, p=0.75, list = FALSE)
+index.genes <- createDataPartition(data.genes$General_Grade, p=0.75, list=FALSE)
+# Subset training set with index
+#ips.training <- data.ips[index.ips,]
+#rand.training <- data.rand[index.rand,]
+a549.training <- data.a549[index.a549,]
+randomdata.a549.training <- randomdata.a549[index.randomdata.a549,]
+genes.train <- data.genes[index.genes,]
+# Subset test set with index
+#ips.test <- data.ips[-index.ips,]
+#rand.test <- data.rand[-index.rand,]
+genes.test <- data.genes[-index.genes,]
+a549.test <- data.a549[-index.a549,]
+randomdata.a549.test <- randomdata.a549[-index.randomdata.a549,]
+
+# Overview of algos supported by caret
+#names(getModelInfo())
+
+# Train a model
+#model_knn <- train(iris.training[, 1:4], iris.training[, 5], method='knn')
+
+#Possible to make other models simply by changing the method argument
+#model_cart <- train(iris.training[, 1:4], iris.training[, 5], method='rpart2')
+
+# Predict the labels of the test set
+#predictions<-predict(object=model_knn,iris.test[,1:4])
+
+# Evaluate the predictions
+#table(predictions)
+
+# Confusion matrix 
+#confusionMatrix(predictions,iris.test[,5]) # Allows us to see the stats and results behind the predictions
+
+# Now lets try preprocessing data with scaling and centering 
+# Train the model with preprocessing
+#model_knn <- train(iris.training[, 1:4], iris.training[, 5], method='knn', preProcess=c("center", "scale"))
+
+# Predict values
+#predictions<-predict.train(object=model_knn,iris.test[,1:4], type="raw")
+
+# Confusion matrix
+#confusionMatrix(predictions,iris.test[,5])
+
+# Random Forest
+#set.seed(7)
+#fit.rf <- train(Species~., data=dataset, method="rf", metric=metric, trControl=control)
+
+# Build the model (note: not all possible variables are used)
+#stage.training$General_Stages <- ordered(stage.training$General_Stages, levels = c("I", "IV"))
+
+#model.rf <- train(General_Stages ~ ., method = "rf", data = stage.training)
+
+#modelgrade.rf <- train(stage.training[,2:1002], stage.training[,1003], method = "rf")
+#ips.model.rf <- train(ips.training[,3:24], ips.training[,2], method = "rpart")
+#rand.model.rf <- train(rand.training[,3:24], rand.training[,2], method = "rpart")
+a549.model.rf <- train(a549.training[,3:24], a549.training[,2], method = "rf")
+randomdata.a549.model.rf <- train(randomdata.a549.training[,3:24], randomdata.a549.training[,2], method = "rf")
+genes.model.rf <- train(genes.train[3:289], genes.train[,2], method = "rf")
+#predictgrade.rf <- predict(object=modelgrade.rf, stage.test)
+#ips.predict.rf <- predict(object=ips.model.rf, ips.test)
+#rand.predict.rf <- predict(object=rand.model.rf, rand.test)
+a549.predict.rf <- predict(object=a549.model.rf, a549.test)
+randomdata.a549.predict.rf <- predict(object=randomdata.a549.model.rf, randomdata.a549.test)
+genes.predict.rf <- predict(genes.model.rf, genes.test)
+
+#Possible to make other models simply by changing the method argument
+#model_cart <- train(iris.training[, 1:4], iris.training[, 5], method='rpart2')
+
+# Predict the labels of the test set
+#predictions<-predict(object=model_knn,iris.test[,1:4])
+
+# Evaluate the predictions
+#table(predictgrade.rf)
+table(ips.predict.rf)
+table(rand.predict.rf)
+
+# Confusion matrix 
+#confusionMatrix(predictgrade.rf, stage.test[,1003]) # Allows us to see the stats and results behind the predictions
+a <- confusionMatrix(ips.predict.rf, ips.test[,2])
+b <- confusionMatrix(rand.predict.rf, rand.test[,2])
+x <- confusionMatrix(a549.predict.rf, a549.test[,2])
+y <- confusionMatrix(randomdata.a549.predict.rf, randomdata.a549.test[,2])
+
+tocsv_x <- cbind.data.frame(t(x$positive), t(x$table), t(x$overall), t(x$byClass), t(x$dots))
+tocsv_y <- cbind.data.frame(t(y$positive), t(y$table), t(y$overall), t(y$byClass), t(y$dots))
+write.csv(tocsv_x, "Lung_LUAD_A549Test_A549.csv")
+write.csv(tocsv_y, "Lung_LUAD_A549Test_Random.csv")
+
+tocsv_a <- cbind.data.frame(t(a$positive), t(a$table), t(a$overall), t(a$byClass), t(a$dots))
+tocsv_b <- cbind.data.frame(t(b$positive), t(b$table), t(b$overall), t(b$byClass), t(b$dots))
+write.csv(tocsv_a, "Lung_LUAD_iPSTest_iPS.csv")
+write.csv(tocsv_b, "Lung_LUAD_iPSTest_Random.csv")
+
+confusionMatrix(genes.predict.rf, genes.test[,2])
+
+genes.train2 <- genes.train[,2:ncol(genes.train)]
+names(genes.train2)[names(genes.train2) == '2-Sep'] <- 'Sep2'
+genes.test2 <- genes.test[,2:ncol(genes.test)]
+names(genes.test2)[names(genes.test2) == '2-Sep'] <- 'Sep2'
+model.genes.rf <- randomForest(General_Grade ~., data = genes.train2, importance = TRUE)
+#ips.test2 <- ips.test[,2:ncol(ips.test)]
+#ips.train <- ips.training[,2:ncol(ips.training)]
+#model.ips <- randomForest(General_Grade ~., data = ips.train, importance = TRUE)
+#model.ips.rpart <- rpart(General_Grade ~., data = ips.train, method = "class")
+a549.train2 <- a549.training[,2:ncol(a549.training)]
+a549.test2 <- a549.test[,2:ncol(a549.test)]
+model.a549 <- randomForest(General_Grade ~., data = a549.train2, importance = TRUE)
+
+randomdata.a549.train2 <- randomdata.a549.training[,2:ncol(randomdata.a549.training)]
+names(randomdata.a549.train2)[names(randomdata.a549.train2) == 'SNORD114-29'] <- 'SNORD11429'
+randomdata.a549.test2 <- randomdata.a549.test[,2:ncol(randomdata.a549.test)]
+names(randomdata.a549.test2)[names(randomdata.a549.test2) == 'SNORD114-29'] <- 'SNORD11429'
+model.randomdata.a549 <- randomForest(General_Grade ~., data = randomdata.a549.train2, importance = TRUE)
+
+#rand.test2 <- rand.test[,2:ncol(rand.test)]
+#names(rand.test2)[names(rand.test2) == 'SNORD114-5'] <- 'SNORD1145'
+#rand.train <- rand.training[,2:ncol(rand.training)]
+#names(rand.train)[names(rand.train) == 'SNORD114-5'] <- 'SNORD1145'
+#model.rand <- randomForest(General_Grade ~., data = rand.train, importance = TRUE)
+#model.rand.rpart <- rpart(General_Grade ~., data = rand.train, method = "class")
+
+#predict.ips <- predict(model.ips, ips.test2)
+#predict.rand <- predict(model.rand, rand.test2)
+predict.a549 <- predict(model.a549, a549.test2)
+predict.randomdata.a549 <- predict(model.randomdata.a549, randomdata.a549.test2)
+predict.genes <- predict(model.genes.rf, genes.test2)
+#fancyRpartPlot(model.ips.rpart)
+
+#fit <- rpart(General_Stages ~ ., data = stage, method = "class")
+
+# Get importance
+importance.genes <- varImp(genes.model.rf, scale = FALSE)
+importance.genes.rf <- varImp(model.genes.rf, scale = FALSE)
+
+#importance.ips <- varImp(model.ips, scale=FALSE)
+#importance.rand <- varImp(model.rand, scale = FALSE)
+importance.a549 <- varImp(model.a549, scale = FALSE)
+importance.randomdata.a549 <- varImp(model.randomdata.a549, scale = FALSE)
+print(importance.a549)
+plot(importance.a549)
+print(importance.randomdata.a549)
+plot(importance.randomdata.a549)
+print(importance.genes.rf)
+plot(importance.genes.rf)
+
+importance.ips <- importance(model.ips)
+importance.rand <- importance(model.rand)
+importance.tgenes <- importance(model.genes.rf)
+importance.a549.2 <- importance(model.a549)
+importance.randomdata.a549.2 <- importance(model.randomdata.a549)
+
+# summarize and plot importance
+print(importance.ips)
+plot(importance.ips)
+print(importance.rand)
+plot(importance.rand)
+plot(importance.tgenes)
+
+varImportance.genes <- data.frame(Variables = row.names(importance.tgenes), 
+                            Importance = round(importance.tgenes[ ,'MeanDecreaseGini'],2))
+
+# Create a rank variable based on importance
+rankImportance.genes <- varImportance.genes %>%
+  mutate(Rank = paste0('#',dense_rank(desc(Importance))))
+
+# Use ggplot2 to visualize the relative importance of variables
+ggplot(rankImportance.genes, aes(x = reorder(Variables, Importance), 
+                           y = Importance, fill = Importance)) +
+  geom_bar(stat='identity') + 
+  geom_text(aes(x = Variables, y = 0.5, label = Rank),
+            hjust=0, vjust=0.55, size = 4, colour = 'darkblue') +
+  labs(x = 'Variables') +
+  theme(axis.text.y = element_text(size = 6, color = ifelse(rankImportance.genes$Variables %in% ipsgene, "red", "black"))) + 
+  coord_flip() #+ 
+  #theme_few()
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
