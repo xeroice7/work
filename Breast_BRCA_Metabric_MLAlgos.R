@@ -114,7 +114,7 @@ stageDF <- rbind.data.frame(stage1, stage2, stage3, stage4)
 stageDF$Stage <- ordered(stage$Stage, c("Low", "High"))
 
 
-stage <- stage300[,c(1,50:10050,20533)]
+#stage <- stage300[,c(1,50:10050,20533)]
 #stage1 <- cbind.data.frame(stage$PATIENT_ID, stage$General_Stages)
 #colnames(stage1) <- c("PATIENT_ID", "General_Stages")
 
@@ -124,21 +124,23 @@ stage <- stage300[,c(1,50:10050,20533)]
 names.use <- names(stageDF)[(names(stageDF) %in% mcf7ips_overlap)]
 len <- length(names.use)
 
-data.mcf7 <- stageDF[, c("PATIENT_ID", "TUMOR_STAGE", "Stage", names.use)]
+#data.mcf7 <- stageDF[, c("PATIENT_ID", "TUMOR_STAGE", "Stage", names.use)]
+data.mcf7 <- stageDF[, c(names.use, "Stage")]
+
 #data.rand <- data[, sample(ncol(data), len)]
 #data.rand <- cbind.data.frame(data$PATIENT_ID, data$General_Grade, data.rand)
 
-randomdata.a549 <- data[, sample(ncol(data), len)]
-randomdata.a549 <- cbind.data.frame(data$PATIENT_ID, data$General_Grade, randomdata.a549)
-names(randomdata.a549)[names(randomdata.a549) == 'data$PATIENT_ID'] <- 'PATIENT_ID'
-names(randomdata.a549)[names(randomdata.a549) == 'data$General_Grade'] <- 'General_Grade'
+#randomdata.a549 <- data[, sample(ncol(data), len)]
+#randomdata.a549 <- cbind.data.frame(data$PATIENT_ID, data$General_Grade, randomdata.a549)
+#names(randomdata.a549)[names(randomdata.a549) == 'data$PATIENT_ID'] <- 'PATIENT_ID'
+#names(randomdata.a549)[names(randomdata.a549) == 'data$General_Grade'] <- 'General_Grade'
 
 #names(data.rand)[names(data.rand) == 'data$PATIENT_ID'] <- 'PATIENT_ID'
 #names(data.rand)[names(data.rand) == 'data$General_Grade'] <- 'General_Grade'
 #data.ips <- filter(data.ips, General_Grade == "T1" | General_Grade == "T3")
 #data.ips$General_Grade <- ordered(data.ips$General_Grade, levels = c("T1", "T3"))
-data.genes <- filter(data.genes, General_Grade == "T1" | General_Grade == "T3")
-data.genes$General_Grade <- ordered(data.genes$General_Grade, levels = c("T1", "T3"))
+#data.genes <- filter(data.genes, General_Grade == "T1" | General_Grade == "T3")
+#data.genes$General_Grade <- ordered(data.genes$General_Grade, levels = c("T1", "T3"))
 #data.a549 <- filter(data.a549, General_Grade == "T1" | General_Grade == "T3")
 #data.a549$General_Grade <- ordered(data.a549$General_Grade, levels = c("T1", "T3"))
 #randomdata.a549 <- filter(randomdata.a549, General_Grade == "T1" | General_Grade == "T3")
@@ -181,7 +183,223 @@ mcf7.train<- data.mcf7[index.mcf7,]
 #rand.test <- data.rand[-index.rand,]
 #genes.test <- data.genes[-index.genes,]
 mcf7.test <- data.mcf7[-index.mcf7,]
-randomdata.a549.test <- randomdata.a549[-index.randomdata.a549,]
+#randomdata.a549.test <- randomdata.a549[-index.randomdata.a549,]
+
+ctrl <- trainControl(method = "repeatedcv", repeats = 5,
+                     classProbs = TRUE,
+                     summaryFunction = twoClassSummary,
+                     ## new option here:
+                     sampling = "smote")
+
+set.seed(5627)
+down_inside <- train(Stage ~ ., data = mcf7.train,
+                     method = "treebag",
+                     nbagg = 50,
+                     metric = "ROC",
+                     trControl = ctrl)
+
+
+set.seed(42)
+model_rf <- caret::train(classes ~ .,
+                         data = train_data,
+                         method = "rf",
+                         preProcess = c("scale", "center"),
+                         trControl = trainControl(method = "repeatedcv", 
+                                                  number = 10, 
+                                                  repeats = 10, 
+                                                  savePredictions = TRUE, 
+                                                  verboseIter = FALSE))
+
+model_rf$finalModel$confusion
+
+imp <- model_rf$finalModel$importance
+imp[order(imp, decreasing = TRUE), ]
+
+
+#Subsampling for Class Imbalances
+#DO the subsampling OUTSIDE of the train function
+library(ROSE)
+library(DMwR)
+downtrain.mcf7 <- downSample(x = mcf7.train[,-ncol(mcf7.train)], y = mcf7.train$Stage)
+table(downtrain.mcf7$Class)
+uptrain.mcf7 <- upSample(x = mcf7.train[,-ncol(mcf7.train)], y = mcf7.train$Stage)
+table(uptrain.mcf7$Class)
+smotetrain.mcf7 <- SMOTE(Stage ~., data = mcf7.train)
+table(smotetrain.mcf7$Stage)
+#set.seed(9560)
+#rosetrain.mcf7 <- ROSE(Stage ~ ., data  = mcf7.train)
+#table(rosetrain.mcf7$Stage)
+#rose_train <- ROSE(Class ~ ., data  = imbal_train)$data                        
+#table(rose_train$Class) 
+ctrl <- trainControl(method = "repeatedcv", repeats = 5,
+                     classProbs = TRUE,
+                     summaryFunction = twoClassSummary)
+
+set.seed(5627)
+orig_fit <- train(Stage ~ ., data = mcf7.train, 
+                  method = "treebag",
+                  nbagg = 50,
+                  metric = "ROC",
+                  trControl = ctrl)
+
+set.seed(5627)
+down_outside <- train(Class ~ ., data = downtrain.mcf7, 
+                      method = "treebag",
+                      nbagg = 50,
+                      metric = "ROC",
+                      trControl = ctrl)
+
+set.seed(5627)
+up_outside <- train(Class ~ ., data = uptrain.mcf7, 
+                    method = "treebag",
+                    nbagg = 50,
+                    metric = "ROC",
+                    trControl = ctrl)
+
+set.seed(5627)
+smote_outside <- train(Stage ~ ., data = smotetrain.mcf7, 
+                      method = "treebag",
+                      nbagg = 50,
+                      metric = "ROC",
+                      trControl = ctrl)
+
+
+
+outside_models <- list(original = orig_fit,
+                       down = down_outside,
+                       up = up_outside,
+                       SMOTE = smote_outside)
+
+outside_resampling <- resamples(outside_models)
+
+test_roc <- function(model, data) {
+  #library(pROC)
+  roc_obj <- roc(data$Stage, 
+                 predict(model, data, type = "prob")[, "Low"],
+                 levels = c("Low", "High"))
+  ci(roc_obj)
+}
+
+outside_test <- lapply(outside_models, test_roc, data = mcf7.test)
+outside_test <- lapply(outside_test, as.vector)
+outside_test <- do.call("rbind", outside_test)
+colnames(outside_test) <- c("lower", "ROC", "upper")
+outside_test <- as.data.frame(outside_test)
+
+summary(outside_resampling, metric = "ROC")
+
+outside_test # Test and training sets for the area under the ROC curve do not appear to correlate.... 
+
+#Subsampling during resampling - doing the subsampling during/inside the train function 
+ctrl <- trainControl(method = "repeatedcv", repeats = 5,
+                     classProbs = TRUE,
+                     summaryFunction = twoClassSummary,
+                     ## new option here:
+                     sampling = "down")
+
+set.seed(5627)
+down_inside <- train(Stage ~ ., data = mcf7.train,
+                     method = "treebag",
+                     nbagg = 50,
+                     metric = "ROC",
+                     trControl = ctrl)
+
+## now just change that option
+ctrl$sampling <- "up"
+
+set.seed(5627)
+up_inside <- train(Stage ~ ., data = mcf7.train,
+                   method = "treebag",
+                   nbagg = 50,
+                   metric = "ROC",
+                   trControl = ctrl)
+
+#ctrl$sampling <- "rose"
+
+#set.seed(5627)
+#rose_inside <- train(Stage ~ ., data = mcf7.train,
+                    # method = "treebag",
+                     #nbagg = 50,
+                     #metric = "ROC",
+                     #trControl = ctrl)
+
+ctrl$sampling <- "smote"
+
+set.seed(5627)
+smote_inside <- train(Stage ~ ., data = mcf7.train,
+                      method = "treebag",
+                      nbagg = 50,
+                      metric = "ROC",
+                      trControl = ctrl)
+
+
+inside_models <- list(original = orig_fit,
+                      down = down_inside,
+                      up = up_inside,
+                      SMOTE = smote_inside)
+
+inside_resampling <- resamples(inside_models)
+
+inside_test <- lapply(inside_models, test_roc, data = mcf7.test)
+inside_test <- lapply(inside_test, as.vector)
+inside_test <- do.call("rbind", inside_test)
+colnames(inside_test) <- c("lower", "ROC", "upper")
+inside_test <- as.data.frame(inside_test)
+
+summary(inside_resampling, metric = "ROC")
+
+inside_test
+
+
+#Feature Plots to determine differences between Features (Finding the defining features)
+library(AppliedPredictiveModeling)
+transparentTheme(trans = .4)
+library(caret)
+featurePlot(x = iris[, 1:4], 
+            y = iris$Species, 
+            plot = "pairs",
+            ## Add a key at the top
+            auto.key = list(columns = 3))
+
+###
+featurePlot(x = mcf7[,20:ncol(mcf7)], 
+            y = mcf7$Stage, 
+            plot = "pairs",
+            ## Add a key at the top
+            auto.key = list(columns = 3))
+###
+
+
+
+featurePlot(x = mcf7[,25:ncol(mcf7)], 
+            y = mcf7$Stage,  
+            plot = "ellipse",
+            ## Add a key at the top
+            auto.key = list(columns = 3))
+
+transparentTheme(trans = .9)
+featurePlot(x = mcf7[,25:ncol(mcf7)], 
+            y = mcf7$Stage, 
+            plot = "density", 
+            ## Pass in options to xyplot() to 
+            ## make it prettier
+            scales = list(x = list(relation="free"), 
+                          y = list(relation="free")), 
+            adjust = 1.5, 
+            pch = "|", 
+            layout = c(4, 1), 
+            auto.key = list(columns = 3))
+
+featurePlot(x = iris[, 1:4], 
+            y = iris$Species, 
+            plot = "box", 
+            ## Pass in options to bwplot() 
+            scales = list(y = list(relation="free"),
+                          x = list(rot = 90)),  
+            layout = c(4,1 ), 
+            auto.key = list(columns = 2))
+
+
 
 # Overview of algos supported by caret
 #names(getModelInfo())
