@@ -17,6 +17,8 @@ library(rattle)
 library(rpart.plot)
 library(class)
 library(gmodels)
+library(pROC)
+library(plotROC)
 
 #Load Gene Filters =========================================
 #Total iPS overlaps (including somatic targets - 93 genes)
@@ -149,8 +151,177 @@ data.mcf7 <- stageDF[, c(names.use, "Stage")]
 #data.rand <- filter(data.rand, General_Grade == "T1" | General_Grade == "T3")
 #data.rand$General_Grade <- ordered(data.rand$General_Grade, levels = c("T1", "T3"))
 
+#### Setting Model Parameters ======================================================
 # Set a random seed
 set.seed(754)
+
+# Create index to split based on labels  
+index.mcf7 <- createDataPartition(data.mcf7$Stage, p=0.8, list = FALSE)
+
+# Subset training set with index
+mcf7.train<- data.mcf7[index.mcf7,]
+
+# Subset test set with index
+mcf7.test <- data.mcf7[-index.mcf7,]
+
+# Creating and setting consistent training parameters for all models
+ctrl <- trainControl(method = "repeatedcv",
+                     number=10, 
+                     repeats=10,
+                     classProbs = TRUE,
+                     summaryFunction = twoClassSummary,
+                     verboseIter = TRUE,
+                     savePredictions = TRUE,
+                     sampling = "smote")
+
+### Random Forest Model ===========================================================================
+rf.model <- train(Stage ~ ., data = mcf7.train,
+                     method = "rf",
+                     metric = "ROC",
+                     preProcess = c("scale", "center"),
+                     trControl = ctrl)
+rf.model$finalModel$confusion
+rf.model$finalModel$importance
+rfPredict <- predict(rf.model, newdata = mcf7.test)
+rfOutput <- confusionMatrix(rfPredict, mcf7.test$Stage)
+
+selectedIndices <- rf.model$pred$mtry == 2
+
+# Plot:
+plot.roc(rfFit$pred$obs[selectedIndices],
+         rfFit$pred$M[selectedIndices])
+
+plot.roc(rf.model$pred$obs[selectedIndices],
+         rf.model$pred$Low[selectedIndices])
+
+g <- ggplot(rf.model$pred[selectedIndices, ], aes(m = Low, d = factor(obs, levels = c("Low", "High")))) + 
+  geom_roc(hjust = -0.4, vjust = 1.5) + coord_equal() + style_roc()
+
+#Updated ROC curve plot
+g <- ggplot(rf.model$pred[selectedIndices, ], aes(m = Low, d = factor(obs, levels = c("Low", "High")))) + 
+  geom_roc(n.cuts=0) +  
+  coord_equal() +
+  style_roc() +
+  geom_ribbon(alpha=0.2)
+
+g + annotate("text", x=0.75, y=0.25, label=paste("AUC =", round((calc_auc(g))$AUC, 4)))
+
+### RPart/Decision Tree Model ====================================================================================
+rpart.model <- train(Stage ~ ., data = mcf7.train,
+                  method = "rpart",
+                  metric = "ROC",
+                  preProcess = c("scale", "center"),
+                  trControl = ctrl)
+#rpart.model$finalModel$confusion
+#rpart.model$finalModel$importance
+rpartPredict <- predict(rpart.model, newdata = mcf7.test)
+rpartOutput <- confusionMatrix(rpartPredict, mcf7.test$Stage)
+
+
+#Plot 1
+rpart.pred <- predict(rpart.model, newdata = mcf7.test, type = "prob")[,2]
+rpart.pred2 <- prediction(rpart.pred, mcf7.test$Stage) 
+roc <- performance(rpart.pred2, measure = "tpr", x.measure = "fpr")
+plot(performance(rpart.pred2, "tpr", "fpr"))
+plot(performance(rpart.pred2, "tpr", "fpr"), lwd=2,col="blue",
+     main="ROC:  Classification Trees on Adult Dataset")
+abline(0, 1, lty = 2)
+
+#Plot 2
+auc <- performance(rpart.pred2, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(roc@x.values),
+                       tpr=unlist(roc@y.values),
+                       model="GLM")
+
+ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
+  geom_ribbon(alpha=0.2) +
+  geom_line(aes(y=tpr)) +
+  ggtitle(paste0("ROC Curve w/ AUC=", auc)) +
+  #geom_roc(n.cuts=0) +  
+  coord_equal() +
+  style_roc() + 
+  annotate("text", x=0.75, y=0.25, label=paste("AUC =", round(auc, 4)))
+
+### K-Nearest Neighbors Model =================================================================
+knn.model <- train(Stage ~ ., data = mcf7.train,
+                  method = "knn",
+                  metric = "ROC",
+                  preProcess = c("scale", "center"),
+                  trControl = ctrl)
+
+knnPredict <- predict(knn.model, newdata = mcf7.test)
+knnOutput <- confusionMatrix(knnPredict, mcf7.test$Stage)
+
+#Plot 1
+knn.pred <- predict(knn.model, newdata = mcf7.test, type = "prob")[,2]
+knn.pred2 <- prediction(knn.pred, mcf7.test$Stage) 
+roc <- performance(knn.pred2, measure = "tpr", x.measure = "fpr")
+plot(performance(knn.pred2, "tpr", "fpr"))
+plot(performance(knn.pred2, "tpr", "fpr"), lwd=2,col="blue",
+     main="ROC:  Classification Trees on Adult Dataset")
+abline(0, 1, lty = 2)
+
+#Plot 2
+auc <- performance(knn.pred2, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(roc@x.values),
+                       tpr=unlist(roc@y.values),
+                       model="knn")
+
+ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
+  geom_ribbon(alpha=0.2) +
+  geom_line(aes(y=tpr)) +
+  ggtitle(paste0("ROC Curve w/ AUC=", auc)) +
+  #geom_roc(n.cuts=0) +  
+  coord_equal() +
+  style_roc() + 
+  annotate("text", x=0.75, y=0.25, label=paste("AUC =", round(auc, 4)))
+
+### Logistic Regression model ==============================================================
+logistic.model1 <- glm(Stage ~ .,family=binomial(link='logit'), data = mcf7.train)
+logistic.model2 <- train(Stage ~ ., data = mcf7.train,
+                         method = "glm",
+                         metric = "ROC",
+                         preProcess = c("scale", "center"),
+                         trControl = ctrl)
+logistic.predict1 <- predict(logistic.model1, newdata = mcf7.test)
+logistic.predict2 <- predict(logistic.model2, newdata = mcf7.test)
+logisticOutput1 <- confusionMatrix(logistic.predict1, mcf7.test$Stage)
+logisticOutput2 <- confusionMatrix(logistic.predict2, mcf7.test$Stage)
+
+fitted.results <- predict(logistic.model1, newdata = mcf7.test, type='response')
+fitted.results <- ifelse(fitted.results > 0.5,"High","Low")
+fitted.results <- as.factor(fitted.results)
+fitted.results <- ordered(fitted.results, c("Low", "High"))
+confusionMatrix(fitted.results, mcf7.test$Stage)
+
+misClasificError <- mean(fitted.results != mcf7.test$Stage)
+print(paste('Accuracy',1-misClasificError))
+
+p <- predict(fitted.results, newdata = mcf7.test, type="response")
+pr <- prediction(p, mcf7.test$Stage)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+
+roc.data <- data.frame(fpr=unlist(prf@x.values),
+                       tpr=unlist(prf@y.values),
+                       model="GLM")
+
+ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
+  geom_ribbon(alpha=0.2) +
+  geom_line(aes(y=tpr)) +
+  ggtitle(paste0("ROC Curve w/ AUC=", auc)) +
+  #geom_roc(n.cuts=0) +  
+  coord_equal() +
+  style_roc() + 
+  annotate("text", x=0.75, y=0.25, label=paste("AUC =", round(auc, 4)))
 
 #Find most important factors
 #control <- trainControl(method="repeatedcv", number=2, repeats=2)
@@ -170,19 +341,19 @@ set.seed(754)
 # Create index to split based on labels  
 #index.ips <- createDataPartition(data.ips$General_Grade, p=0.75, list=FALSE)
 #index.rand <- createDataPartition(data.rand$General_Grade, p=0.75, list=FALSE)
-index.mcf7 <- createDataPartition(data.mcf7$Stage, p=0.75, list = FALSE)
+#index.mcf7 <- createDataPartition(data.mcf7$Stage, p=0.75, list = FALSE)
 
 # Subset training set with index
 #ips.training <- data.ips[index.ips,]
 #rand.training <- data.rand[index.rand,]
-mcf7.train<- data.mcf7[index.mcf7,]
+#mcf7.train<- data.mcf7[index.mcf7,]
 #randomdata.a549.training <- randomdata.a549[index.randomdata.a549,]
 #genes.train <- data.genes[index.genes,]
 # Subset test set with index
 #ips.test <- data.ips[-index.ips,]
 #rand.test <- data.rand[-index.rand,]
 #genes.test <- data.genes[-index.genes,]
-mcf7.test <- data.mcf7[-index.mcf7,]
+#mcf7.test <- data.mcf7[-index.mcf7,]
 #randomdata.a549.test <- randomdata.a549[-index.randomdata.a549,]
 
 ctrl <- trainControl(method = "repeatedcv", repeats = 5,
@@ -191,12 +362,12 @@ ctrl <- trainControl(method = "repeatedcv", repeats = 5,
                      ## new option here:
                      sampling = "smote")
 
-set.seed(5627)
-down_inside <- train(Stage ~ ., data = mcf7.train,
-                     method = "treebag",
-                     nbagg = 50,
-                     metric = "ROC",
-                     trControl = ctrl)
+#set.seed(5627)
+#down_inside <- train(Stage ~ ., data = mcf7.train,
+#                     method = "treebag",
+#                     nbagg = 50,
+#                     metric = "ROC",
+#                     trControl = ctrl)
 
 
 set.seed(42)
@@ -577,19 +748,21 @@ stages <- ordered(stages, levels = c("1", "2", "3", "4"))
 
 stage_diffs <- patientDF
 #stage_diffs <- subset(patientDF, GENE %in% totaltestgenes)
-stage_diffs <- subset(stage_diffs, GENE %in% huvfips_overlap) #Subset rows that are matches to those in the targets
+stage_diffs <- subset(stage_diffs, GENE %in% mcf7ips_overlap) #Subset rows that are matches to those in the targets
 #stage_diffs <- subset(stage_diffs, GENE %in% gene)
 #stage_diffs <- subset(stage_diffs, GRADE %in% grades)
 #stage_diffs <- subset(stage_diffs, TUMOR_STAGE %in% stages)
 
-#stage_diffs <- filter(stage_diffs, TUMOR_STAGE == 1)
+#stage_diffs <- filter(stage_diffs, TUMOR_STAGE == 4)
 #stage_diffs <- filter(stage_diffs, ((GRADE == 1) | (GRADE == 2)))
 stage_diffs <- filter(stage_diffs, GRADE == 3)
-#stage_diffs <- filter(stage_diffs, (ER_STATUS == "ER-" & HER_STATUS == "HER2-"))
-#stage_diffs <- filter(stage_diffs, HER_STATUS == "HER2+")
+stage_diffs <- filter(stage_diffs, ER_STATUS == "+")
+stage_diffs <- filter(stage_diffs, PR_STATUS == "+")
+stage_diffs <- filter(stage_diffs, HER2_STATUS == "-")
+
 #stage_diffs <- filter(stage_diffs, RATE_OF_PROLIF == "Low")
 
-patient <- dcast(stage_diffs, PATIENT_ID+GRADE+TUMOR_STAGE+ER_STATUS+HER_STATUS+RATE_OF_PROLIF ~ GENE, value.var = "EXPRESSION_LEVEL")
+patient <- dcast(stage_diffs, PATIENT_ID+GRADE+TUMOR_STAGE+ER_STATUS+HER2_STATUS+PR_STATUS ~ GENE, value.var = "EXPRESSION_LEVEL")
 
 #Combine Patients with Clinical Data in Names =====================================
 #extras <- cbind.data.frame(patient$PATIENT_ID, patient$GRADE, patient$TUMOR_STAGE)
@@ -609,7 +782,7 @@ patient <- dcast(stage_diffs, PATIENT_ID+GRADE+TUMOR_STAGE+ER_STATUS+HER_STATUS+
 #  unite(PATIENT_ID, ID, TUMOR_STAGE, GRADE, sep = "_", remove = TRUE)
 
 #Setting up patient matrix ========================================================
-patient <- subset(patient, select = -c(GRADE, TUMOR_STAGE, RATE_OF_PROLIF, ER_STATUS, HER_STATUS))
+patient <- subset(patient, select = -c(GRADE, TUMOR_STAGE, PR_STATUS, ER_STATUS, HER2_STATUS))
 patient[,1] <- as.character(patient[,1])
 
 patient[,2:ncol(patient)] <- sapply(patient[,2:ncol(patient)],as.numeric)
@@ -629,12 +802,12 @@ test1 <- t(test)
 grade1 <- test1
 grade2 <- test1
 grade3 <- test1
-#grade4 <- test1
+grade4 <- test1
 #heatmap(test1, Colv=NA, col=greenred(10),scale="none")
 #cor(t(test1))
 t <- 1-cor(t(test1))
 x <- cor(t(test1))
-y <- cor(t(grade1), t(grade3))
+y <- cor(t(grade1), t(grade4))
 #hc <- hclust(as.dist(1-cor(t(test1))))
 #plot(hc)
 #heatmap(test1, Rowv=as.dendrogram(hc) , Colv=NA, col=greenred(10), cexRow = 0.2)
@@ -681,10 +854,10 @@ ggplot(extracted, aes(x=variable, y=Gene)) +
   geom_tile(aes(fill=value)) + 
   scale_fill_distiller(palette = "RdBu") + 
   scale_y_discrete(name="", limits = rev(levels(extracted$Gene))) + 
-  geom_text(aes(x=variable, y=Gene, label=round(value, digits = 2)), size=2) + 
+  geom_text(aes(x=variable, y=Gene, label=round(value, digits = 2)), size=3) + 
   xlab("Correlation between Stage 1 vs Stage 4") + 
   theme(axis.text.x = element_blank(), 
-        axis.text.y = element_text(size=6),
+        axis.text.y = element_text(size=8),
         legend.text = element_text(size=8), 
         axis.title.x = element_text(size=8)) 
 
@@ -693,11 +866,11 @@ extracted <- arrange(extracted, desc(value))
 ggplot(extracted) +
   geom_tile(aes(x=variable, y=Gene, fill=value)) + 
   scale_fill_distiller(palette = "RdBu") + 
-  scale_y_discrete(name="", limits = extracted$Gene) + 
-  geom_text(aes(x=variable, y=Gene, label = round(value, digits = 2)), size=2) + 
+  scale_y_discrete(name="", limits = rev(extracted$Gene)) + 
+  geom_text(aes(x=variable, y=Gene, label = round(value, digits = 2)), size=3) + 
   xlab("Correlation between Stage 1 vs Stage 4") + 
   theme(axis.text.x = element_blank(), 
-        axis.text.y = element_text(size=6),
+        axis.text.y = element_text(size=8),
         legend.text = element_text(size=8), 
         axis.title.x = element_text(size=8)) 
 
@@ -720,15 +893,24 @@ results <- mapply(t.test, stage1, stage4)
 results <- plyr::ldply(results["p.value",], data.frame)
 colnames(results) <- c("Genes", "pvalues")
 results <- arrange(results, desc(pvalues))
-results$Stage <- "Grade3"
+results$Stage <- "Stage4"
 
 results$colorscale <- cut(results$pvalues, breaks = c(0,0.05,0.1,0.25,0.5,1),right = FALSE)
 
+results$editedpvalues <- NA
+for (row in 1:nrow(results)) {
+  if (results$pvalues[row] < 0.001) {
+    results$editedpvalues[row] <- "<0.001"
+  } else {
+    results$editedpvalues[row] <- round(results$pvalues[row], digits = 4) 
+  }
+}
+
 ggplot(results) + 
   geom_tile(aes(x=Stage, y=Genes, fill = colorscale), color = "white") + 
-  scale_fill_brewer(palette = "PRGn") +
+  scale_fill_brewer(palette = "RdBu") +
   scale_y_discrete(name="", limits = results$Genes) + 
-  geom_text(aes(x=Stage, y=Genes, label = round(pvalues, digits = 2)), size=2) + 
+  geom_text(aes(x=Stage, y=Genes, label = editedpvalues), size = 3) + 
   theme(axis.text.x = element_text(size = 10), 
         axis.text.y = element_text(size = 8),
         axis.title.x = element_blank(),
@@ -745,17 +927,17 @@ colnames(t_patient_hi)[colnames(t_patient_hi) == 'mean'] <- 'mean_4'
 t_patient_m1 <- merge(t_patient_lo, t_patient_2, by = "row.names")
 t_patient_m2 <- merge(t_patient_3, t_patient_hi, by = "row.names")
 t_patient_means <- merge(t_patient_m1, t_patient_m2, by = "Row.names")
-t_patient_means <- t_patient_m1
+#t_patient_means <- t_patient_m1
 
 t_patient_means$mean_diff_1 <- t_patient_means$mean_1-t_patient_means$mean_1
 t_patient_means$mean_diff_2 <- t_patient_means$mean_2-t_patient_means$mean_1
 t_patient_means$mean_diff_3 <- t_patient_means$mean_3-t_patient_means$mean_1
 t_patient_means$mean_diff_4 <- t_patient_means$mean_4-t_patient_means$mean_1
 
-cast_patient <- cbind.data.frame(t_patient_means$Row.names, t_patient_means$mean_diff_1, t_patient_means$mean_diff_2)#, t_patient_means$mean_diff_3)#, t_patient_means$mean_diff_4)
-#colnames(cast_patient) <- c("Genes", "Stage1", "Stage4")#, "Stage2", "Stage3")#, "Stage4")
+cast_patient <- cbind.data.frame(t_patient_means$Row.names, t_patient_means$mean_diff_1, t_patient_means$mean_diff_2, t_patient_means$mean_diff_3)#, t_patient_means$mean_diff_4)
+colnames(cast_patient) <- c("Genes", "Stage1", "Stage2", "Stage3", "Stage4")
 #colnames(cast_patient) <- c("Genes", "HER2+", "ER+/HER2-", "ER-/HER2-")
-colnames(cast_patient) <- c("Genes", "Grade1", "Grade3")#, "Grade3")
+colnames(cast_patient) <- c("Genes", "Grade1", "Grade2", "Grade3")
 melt_patient <- melt(cast_patient)
 colnames(melt_patient) <- c("Genes", "Stages", "Difference")
 melt_patient$Genes <- as.factor(melt_patient$Genes)
@@ -765,7 +947,7 @@ ggplot(melt_patient, aes(x=Stages, y=Genes)) +
   geom_tile(aes(fill=Difference)) + 
   scale_fill_distiller(palette = "RdBu") +
   scale_y_discrete(name="", limits = rev(levels(melt_patient$Genes))) + 
-  geom_text(aes(x=Stages, y=Genes, label = round(Difference, digits = 2)), size=2) + 
+  geom_text(aes(x=Stages, y=Genes, label = round(Difference, digits = 2)), size=3) + 
   theme(axis.text.x = element_text(size = 10), 
         axis.text.y = element_text(size = 8),
         axis.title.x = element_blank(),
@@ -776,11 +958,12 @@ ggplot(melt_patient, aes(x=Stages, y=Genes)) +
 #melt_patient <- filter(melt_patient, Stages == "ER+/HER2-")
 melt_patient <- filter(melt_patient, Stages == "Grade3")
 melt_patient <- arrange(melt_patient, desc(Difference))
+#melt_patient <- arrange(melt_patient, rev(Difference))
 ggplot(melt_patient) + 
   geom_tile(aes(x=Stages, y=Genes, fill = Difference)) + 
   scale_fill_distiller(palette = "RdBu") +
-  scale_y_discrete(name="", limits = melt_patient$Genes) + 
-  geom_text(aes(x=Stages, y=Genes, label = round(Difference, digits = 2)), size=2) + 
+  scale_y_discrete(name="", limits = rev(melt_patient$Genes)) + 
+  geom_text(aes(x=Stages, y=Genes, label = round(Difference, digits = 2)), size=3) + 
   theme(axis.text.x = element_text(size = 10), 
         axis.text.y = element_text(size = 8),
         axis.title.x = element_blank(),
