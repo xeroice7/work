@@ -116,14 +116,14 @@ stage4 <- filter(data, TUMOR_STAGE == 4)
 #stage2$Stage <- "Low"
 #stage3$Stage <- "High"
 #stage4$Stage <- "High"
-stage1$Stage <- "One"
-stage2$Stage <- "Two"
-stage3$Stage <- "Three"
-stage4$Stage <- "Four"
+stage1$Stage <- "Low"
+stage2$Stage <- "Low"
+stage3$Stage <- "High"
+stage4$Stage <- "High"
 stageDF <- rbind.data.frame(stage1, stage2, stage3, stage4)
 stageDF$Stage <- as.factor(stageDF$Stage)
-#stageDF$Stage <- ordered(stageDF$Stage, c("Low", "High"))
-stageDF$Stage <- ordered(stageDF$Stage, c("One", "Two", "Three", "Four"))
+stageDF$Stage <- ordered(stageDF$Stage, c("Low", "High"))
+#stageDF$Stage <- ordered(stageDF$Stage, c("Low", "Mid", "High"))
 
 #stage <- stage300[,c(1,50:10050,20533)]
 #stage1 <- cbind.data.frame(stage$PATIENT_ID, stage$General_Stages)
@@ -132,7 +132,7 @@ stageDF$Stage <- ordered(stageDF$Stage, c("One", "Two", "Three", "Four"))
 #stage <- merge(x = stage, y = stage1, by = "PATIENT_ID")
 #names(stage) <- gsub(x = names(stage), pattern = "-", replacement = "")  
 
-names.use <- names(stageDF)[(names(stageDF) %in% mcf7ips_overlap)]
+names.use <- names(stageDF)[(names(stageDF) %in% gene)]
 len <- length(names.use)
 #rand <- sample(ncol(stageDF), len)
 #data.mcf7 <- stageDF[, c("PATIENT_ID", "TUMOR_STAGE", "Stage", names.use)]
@@ -140,10 +140,10 @@ data.mcf7 <- stageDF[, c(names.use, "Stage")]
 
 #USE FOR RANDOM Data
 data.mcf7 <- stageDF[, sample(ncol(stageDF), len)]
-#rand1 <- colnames(data.mcf7)
-#rand2 <- colnames(data.mcf7)
-#rand3 <- colnames(data.mcf7)
-#rand4 <- colnames(data.mcf7)
+rand1 <- colnames(data.mcf7)
+rand2 <- colnames(data.mcf7)
+rand3 <- colnames(data.mcf7)
+rand4 <- colnames(data.mcf7)
 rand5 <- colnames(data.mcf7)
 data.mcf7 <- cbind(data.mcf7, stageDF$Stage)
 colnames(data.mcf7)[colnames(data.mcf7) == 'stageDF$Stage'] <- 'Stage'
@@ -159,6 +159,10 @@ grade3$tumor_grade <- "High"
 gradeDF <- rbind.data.frame(grade1, grade2, grade3)
 gradeDF$tumor_grade <- as.factor(gradeDF$tumor_grade)
 gradeDF$tumor_grade <- ordered(gradeDF$tumor_grade, c("Low", "Mid", "High"))
+gradeDF <- filter(gradeDF, ER_STATUS == "+")
+gradeDF <- filter(gradeDF, PR_STATUS == "+")
+gradeDF <- filter(gradeDF, HER2_STATUS == "-")
+
 
 names.use <- names(gradeDF)[(names(gradeDF) %in% mcf7ips_overlap)]
 len <- length(names.use)
@@ -167,13 +171,13 @@ len <- length(names.use)
 data.mcf7 <- gradeDF[, c(names.use, "tumor_grade")]
 
 #USE FOR RANDOM Data
-data.mcf7 <- gradeDF[, sample(ncol(gradeeDF), len)]
-#rand1 <- colnames(data.mcf7)
-#rand2 <- colnames(data.mcf7)
-#rand3 <- colnames(data.mcf7)
-#rand4 <- colnames(data.mcf7)
-rand5 <- colnames(data.mcf7)
-data.mcf7 <- cbind(data.mcf7, stageDF$Stage)
+data.mcf7 <- gradeDF[, sample(ncol(gradeDF), len)]
+#randGR1 <- colnames(data.mcf7)
+#randGR2 <- colnames(data.mcf7)
+#randGR3 <- colnames(data.mcf7)
+#randGR4 <- colnames(data.mcf7)
+#randGR5 <- colnames(data.mcf7)
+data.mcf7 <- cbind(data.mcf7, gradeDF$tumor_grade)
 colnames(data.mcf7)[colnames(data.mcf7) == 'gradeDF$tumor_grade'] <- 'tumor_grade'
 
 
@@ -205,7 +209,8 @@ colnames(data.mcf7)[colnames(data.mcf7) == 'gradeDF$tumor_grade'] <- 'tumor_grad
 set.seed(754)
 
 # Create index to split based on labels  
-index.mcf7 <- createDataPartition(data.mcf7$tumor_grade, p=0.8, list = FALSE)
+#index.mcf7 <- createDataPartition(data.mcf7$Stage, p=0.8, list = FALSE)
+index.mcf <- createDataPartition(data.mcf7$tumor_grade, p=0.8, list = FALSE)
 
 # Subset training set with index
 mcf7.train<- data.mcf7[index.mcf7,]
@@ -215,8 +220,8 @@ mcf7.test <- data.mcf7[-index.mcf7,]
 
 # Creating and setting consistent training parameters for all models
 ctrl <- trainControl(method = "repeatedcv",
-                     number=3, 
-                     repeats=3,
+                     number=10, 
+                     repeats=10,
                      classProbs = TRUE,
                      summaryFunction = multiClassSummary,
                      verboseIter = TRUE,
@@ -224,15 +229,16 @@ ctrl <- trainControl(method = "repeatedcv",
                      sampling = "smote")
 
 ### Random Forest Model ===========================================================================
-rf.model <- train(Stage ~ ., data = mcf7.train,
+rf.model <- train(tumor_grade ~ ., data = mcf7.train,
                      method = "rf",
-                     metric = "ROC",
+                     metric = "logLoss",
                      preProcess = c("scale", "center"),
+                     na.action = na.omit,
                      trControl = ctrl)
 rf.model$finalModel$confusion
 rf.model$finalModel$importance
 rfPredict <- predict(rf.model, newdata = mcf7.test)
-rfOutput <- confusionMatrix(rfPredict, mcf7.test$Stage)
+rfOutput <- confusionMatrix(rfPredict, mcf7.test$tumor_grade)
 
 selectedIndices <- rf.model$pred$mtry == 2
 
@@ -241,6 +247,9 @@ selectedIndices <- rf.model$pred$mtry == 2
  #        rfFit$pred$M[selectedIndices])
 
 plot.roc(rf.model$pred$obs[selectedIndices],
+         rf.model$pred$Low[selectedIndices])
+
+multiclass.roc(rf.model$pred$obs[selectedIndices],
          rf.model$pred$Low[selectedIndices])
 
 g <- ggplot(rf.model$pred[selectedIndices, ], aes(m = Low, d = factor(obs, levels = c("Low", "High")))) + 
@@ -255,8 +264,10 @@ g <- ggplot(rf.model$pred[selectedIndices, ], aes(m = Low, d = factor(obs, level
 
 g + annotate("text", x=0.75, y=0.25, label=paste("AUC =", round((calc_auc(g))$AUC, 4)))
 
+rf1 <- varImp(rf.model, scale = FALSE)
+plot(rf1)
 ### RPart/Decision Tree Model ====================================================================================
-rpart.model <- train(Stage ~ ., data = mcf7.train,
+rpart.model <- train(tumor_grade ~ ., data = mcf7.train,
                   method = "rpart",
                   metric = "ROC",
                   preProcess = c("scale", "center"),
@@ -264,12 +275,12 @@ rpart.model <- train(Stage ~ ., data = mcf7.train,
 #rpart.model$finalModel$confusion
 #rpart.model$finalModel$importance
 rpartPredict <- predict(rpart.model, newdata = mcf7.test)
-rpartOutput <- confusionMatrix(rpartPredict, mcf7.test$Stage)
+rpartOutput <- confusionMatrix(rpartPredict, mcf7.test$tumor_grade)
 
 
 #Plot 1
 rpart.pred <- predict(rpart.model, newdata = mcf7.test, type = "prob")[,2]
-rpart.pred2 <- prediction(rpart.pred, mcf7.test$Stage) 
+rpart.pred2 <- prediction(rpart.pred, mcf7.test$tumor_grade) 
 roc <- performance(rpart.pred2, measure = "tpr", x.measure = "fpr")
 plot(performance(rpart.pred2, "tpr", "fpr"))
 plot(performance(rpart.pred2, "tpr", "fpr"), lwd=2,col="blue",
@@ -293,19 +304,21 @@ ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
   style_roc() + 
   annotate("text", x=0.75, y=0.25, label=paste("AUC =", round(auc, 4)))
 
+rpart1 <- varImp(rpart.model, scale = FALSE)
+plot(rpart1)
 ### K-Nearest Neighbors Model =================================================================
-knn.model <- train(Stage ~ ., data = mcf7.train,
+knn.model <- train(tumor_grade ~ ., data = mcf7.train,
                   method = "knn",
                   metric = "ROC",
                   preProcess = c("scale", "center"),
                   trControl = ctrl)
 
 knnPredict <- predict(knn.model, newdata = mcf7.test)
-knnOutput <- confusionMatrix(knnPredict, mcf7.test$Stage)
+knnOutput <- confusionMatrix(knnPredict, mcf7.test$tumor_grade)
 
 #Plot 1
 knn.pred <- predict(knn.model, newdata = mcf7.test, type = "prob")[,2]
-knn.pred2 <- prediction(knn.pred, mcf7.test$Stage) 
+knn.pred2 <- prediction(knn.pred, mcf7.test$tumor_grade) 
 roc <- performance(knn.pred2, measure = "tpr", x.measure = "fpr")
 plot(performance(knn.pred2, "tpr", "fpr"))
 plot(performance(knn.pred2, "tpr", "fpr"), lwd=2,col="blue",
@@ -329,29 +342,32 @@ ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
   style_roc() + 
   annotate("text", x=0.75, y=0.25, label=paste("AUC =", round(auc, 4)))
 
+knn1 <- varImp(knn.model, scale = FALSE)
+plot(knn1)
+
 ### Logistic Regression model ==============================================================
-logistic.model1 <- glm(Stage ~ .,family=binomial(link='logit'), data = mcf7.train)
-logistic.model2 <- train(Stage ~ ., data = mcf7.train,
+logistic.model1 <- glm(tumor_grade ~ .,family=binomial(link='logit'), data = mcf7.train)
+logistic.model2 <- train(tumor_grade ~ ., data = mcf7.train,
                          method = "glm",
                          metric = "ROC",
                          preProcess = c("scale", "center"),
                          trControl = ctrl)
 logistic.predict1 <- predict(logistic.model1, newdata = mcf7.test)
 logistic.predict2 <- predict(logistic.model2, newdata = mcf7.test)
-logisticOutput1 <- confusionMatrix(logistic.predict1, mcf7.test$Stage)
-logisticOutput2 <- confusionMatrix(logistic.predict2, mcf7.test$Stage)
+logisticOutput1 <- confusionMatrix(logistic.predict1, mcf7.test$tumor_grade)
+logisticOutput2 <- confusionMatrix(logistic.predict2, mcf7.test$tumor_grade)
 
 fitted.results <- predict(logistic.model1, newdata = mcf7.test, type='response')
 fitted.results <- ifelse(fitted.results > 0.5,"High","Low")
 fitted.results <- as.factor(fitted.results)
 fitted.results <- ordered(fitted.results, c("Low", "High"))
-confusionMatrix(fitted.results, mcf7.test$Stage)
+confusionMatrix(fitted.results, mcf7.test$tumor_grade)
 
-misClasificError <- mean(fitted.results != mcf7.test$Stage)
+misClasificError <- mean(fitted.results != mcf7.test$tumor_grade)
 print(paste('Accuracy',1-misClasificError))
 
 p <- predict(logistic.model1, newdata = mcf7.test, type="response")
-pr <- prediction(p, mcf7.test$Stage)
+pr <- prediction(p, mcf7.test$tumor_grade)
 prf <- performance(pr, measure = "tpr", x.measure = "fpr")
 plot(prf)
 
@@ -371,6 +387,38 @@ ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
   coord_equal() +
   style_roc() + 
   annotate("text", x=0.75, y=0.25, label=paste("AUC =", round(auc, 4)))
+
+lr1 <- varImp(logistic.model1, scale = FALSE)
+lr1 <- data.frame(genes=rownames(lr1), lr1, row.names=NULL)
+ggplot(lr1) + 
+  geom_bar(aes(y=Overall, x=reorder(genes, Overall)), stat = "identity") + 
+  xlab("Gene") + 
+  ylab("Overall Importance") + 
+  coord_flip()
+
+#Plot for Model 2
+
+logreg.pred <- predict(logistic.model2, newdata = mcf7.test, type = "prob")[,2]
+logreg.pred2 <- prediction(logreg.pred, mcf7.test$tumor_grade) 
+auc <- performance(logreg.pred2, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(roc@x.values),
+                       tpr=unlist(roc@y.values),
+                       model="glm")
+
+ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
+  geom_ribbon(alpha=0.2) +
+  geom_line(aes(y=tpr)) +
+  ggtitle(paste0("ROC Curve w/ AUC=", auc)) +
+  #geom_roc(n.cuts=0) +  
+  coord_equal() +
+  style_roc() + 
+  annotate("text", x=0.75, y=0.25, label=paste("AUC =", round(auc, 4)))
+
+
+lr2 <- varImp(logistic.model2, scale = FALSE)
+plot(lr2)
 
 #Find most important factors
 #control <- trainControl(method="repeatedcv", number=2, repeats=2)
